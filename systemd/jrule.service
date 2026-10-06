@@ -1,0 +1,26 @@
+[Unit]
+Description=jRULE jAPI rules engine
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=jrule
+Group=jrule
+WorkingDirectory=/opt/jrule
+EnvironmentFile=/etc/jrule/jrule.env
+RuntimeDirectory=jrule
+RuntimeDirectoryMode=0700
+ExecStartPre=+/bin/bash /opt/jrule/scripts/load-japi-key.sh
+ExecStart=/opt/jrule/venv/bin/uvicorn app.main:app --host ${JRULE_BIND} --port ${JRULE_PORT} --workers 1
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/jrule
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
