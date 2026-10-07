@@ -4,6 +4,7 @@ import os
 import re
 from . import state
 from .http_services import invoke_action, render_body, validate_name
+from .rules import resolve_expression
 
 _ARG_RE=re.compile(r'\{\{\s*args\.([A-Za-z][A-Za-z0-9_-]*)\s*\}\}')
 def _action_arguments(body_json):
@@ -23,15 +24,29 @@ async def catalog():
     }
     return result
 
+def resolve_action_argument(value,context):
+    """Resolve structured rule parameters while preserving literal JSON values."""
+    if isinstance(value,dict) and value.get("kind")=="parameter" and "expression" in value:
+        return resolve_expression(value["expression"],context)
+    if isinstance(value,list):
+        return [resolve_action_argument(v,context) for v in value]
+    if isinstance(value,dict):
+        return {k:resolve_action_argument(v,context) for k,v in value.items()}
+    # Backward compatibility for rules saved before structured action parameters.
+    if isinstance(value,str) and re.fullmatch(r'\{\{\s*[A-Za-z0-9_.-]+\s*\}\}',value):
+        return render_body(value,context)
+    return value
+
+
 async def invoke(name,target,arguments,context=None):
     if os.getenv('JRULE_ENABLE_ACTIONS','0')!='1':
         raise PermissionError('Actions disabled (JRULE_ENABLE_ACTIONS=0)')
     context=context or {}
+    resolved_arguments=resolve_action_argument(arguments,context)
     if name=='variables.set':
-        if not isinstance(arguments,dict) or 'name' not in arguments or 'value' not in arguments:
+        if not isinstance(resolved_arguments,dict) or 'name' not in resolved_arguments or 'value' not in resolved_arguments:
             raise ValueError('variables.set requires name and value')
-        var_name=validate_name(str(arguments['name']))
-        rendered=render_body(arguments['value'],context)
-        await state.update_properties('variables',{var_name:rendered})
+        var_name=validate_name(str(resolved_arguments['name']))
+        await state.update_properties('variables',{var_name:resolved_arguments['value']})
         return
-    await invoke_action(name,arguments,context)
+    await invoke_action(name,resolved_arguments,context)
