@@ -118,6 +118,23 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
         ctx={'current':{'presence':{'user':'JGRA'}},'args':{'message':'Hi'}}
         self.assertEqual(render_body(payload,ctx),{'username':'JGRA','value':'Hi','other':[1,True]})
 
+    def test_typed_whole_value_templates(self):
+        payload={
+            'username':'{{ args.username }}',
+            'count':'{{ args.count }}',
+            'enabled':'{{ args.enabled }}',
+            'items':'{{ args.items }}',
+            'embedded':'user={{ args.username }}',
+        }
+        ctx={'args':{'username':None,'count':3,'enabled':True,'items':['a','b']}}
+        rendered=render_body(payload,ctx)
+        self.assertIsNone(rendered['username'])
+        self.assertEqual(rendered['count'],3)
+        self.assertIs(rendered['enabled'],True)
+        self.assertEqual(rendered['items'],['a','b'])
+        with self.assertRaises(ValueError):
+            render_body({'embedded':'user={{ args.username }}'},ctx)
+
     def test_endpoint_is_japi_only(self):
         self.assertEqual(validate_endpoint('/v1/mdserver/sessions'),'/v1/mdserver/sessions')
         self.assertEqual(validate_endpoint('/v1/mdserver/workstations?include_users=true'),'/v1/mdserver/workstations?include_users=true')
