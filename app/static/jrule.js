@@ -1,6 +1,6 @@
 "use strict";
 const $=s=>document.querySelector(s);
-let sources=[],actions=[],rules=[],variables=[],edit={source:null,action:null,rule:null,variable:null};
+let sources=[],actions=[],rules=[],variables=[],actionCatalog={},ruleParameters=[],edit={source:null,action:null,rule:null,variable:null};
 
 function el(t,text,cls){const e=document.createElement(t);if(text!==undefined&&text!==null)e.textContent=String(text);if(cls)e.className=cls;return e;}
 function notice(s){$('#notice').textContent=s;$('#notice').classList.add('visible');}
@@ -124,11 +124,11 @@ async function refreshSources(){
 async function refreshActions(){
   actions=await api('/api/actions');
   renderList('#action-list',actions,o=>openForm('action',o),o=>remove('actions',o.name,refreshActions));
-  const catalog=await api('/api/modules/actions');
-  $('#action-hint').textContent='Available actions: '+Object.keys(catalog).join(', ');
+  actionCatalog=await api('/api/modules/actions');
+  $('#action-hint').textContent='Available actions: '+Object.keys(actionCatalog).join(', ');
 }
 async function refreshRules(){
-  rules=await api('/api/global-rules');
+  [rules,ruleParameters]=await Promise.all([api('/api/global-rules'),api('/api/global-variables')]);
   renderList('#rules-list',rules,o=>openRule(o),o=>remove('global-rules',o.id,refreshRules));
 }
 async function refreshVariables(){
@@ -262,23 +262,215 @@ async function saveDerived(e){
   }catch(err){notice(err.message)}
 }
 
-function openRule(rule){
-  edit.rule=rule?.id||null;$('#rule-edit').hidden=false;
-  $('#rule-name').value=rule?.name||'';$('#rule-priority').value=rule?.priority??100;
-  $('#rule-cooldown').value=rule?.cooldown_seconds??0;$('#rule-enabled').checked=rule?!!rule.enabled:true;
+
+const OPERATOR_GROUPS=[
+  ['State',[['eq','is'],['ne','is not'],['is_true','is true'],['is_false','is false'],['exists','exists'],['not_exists','does not exist']]],
+  ['Change',[['changed','has changed'],['changed_to','changed to'],['changed_from','changed from']]],
+  ['Number / order',[['gt','is greater than'],['gte','is at least'],['lt','is less than'],['lte','is at most'],['between','is between'],['not_between','is not between']]],
+  ['Collection / text',[['contains','contains'],['not_contains','does not contain'],['in','is in'],['not_in','is not in']]],
+  ['Time',[['time_before','is before time'],['time_after','is after time'],['time_between','is between times'],['time_not_between','is not between times']]],
+  ['Date',[['date_before','is before date'],['date_after','is after date'],['date_between','is between dates'],['date_not_between','is not between dates']]]
+];
+const NO_RIGHT=new Set(['exists','not_exists','is_true','is_false','changed']);
+const RANGE_RIGHT=new Set(['between','not_between','time_between','time_not_between','date_between','date_not_between']);
+
+function parameterSelect(value='',leftSide=false){
+  const s=document.createElement('select');
+  const values=(leftSide?ruleParameters.filter(v=>!v.startsWith('previous.')):ruleParameters);
+  const groups=new Map();
+  for(const p of values){
+    const parts=p.split('.');
+    const group=parts.length>1?parts[1]:'Other';
+    if(!groups.has(group))groups.set(group,[]);
+    groups.get(group).push(p);
+  }
+  for(const [group,items] of groups){
+    const og=document.createElement('optgroup');og.label=group;
+    for(const p of items){const o=document.createElement('option');o.value=p;o.textContent=p;if(p===value)o.selected=true;og.append(o);}
+    s.append(og);
+  }
+  if(value && !values.includes(value)){const o=document.createElement('option');o.value=value;o.textContent=value+' (missing)';o.selected=true;s.prepend(o);}
+  return s;
+}
+function operatorSelect(value='eq'){
+  const s=document.createElement('select');
+  for(const [group,ops] of OPERATOR_GROUPS){
+    const og=document.createElement('optgroup');og.label=group;
+    for(const [v,label] of ops){const o=document.createElement('option');o.value=v;o.textContent=label;if(v===value)o.selected=true;og.append(o);}
+    s.append(og);
+  }
+  return s;
+}
+function literalInput(value,cls='condition-value'){
+  const i=document.createElement('input');i.className=cls;
+  i.value=value===undefined||value===null?(value===null?'null':''):(typeof value==='string'?value:j(value));
+  return i;
+}
+function renderConditionRight(row,node={}){
+  const slot=row.querySelector('.condition-right');slot.replaceChildren();
+  const op=row.querySelector('.condition-operator').value;
+  if(NO_RIGHT.has(op)){slot.append(el('span','', 'muted'));return;}
+  if(RANGE_RIGHT.has(op)){
+    const values=Array.isArray(node.right)?node.right:['',''];
+    const a=literalInput(values[0],'range-a'),b=literalInput(values[1],'range-b');
+    a.placeholder='From';b.placeholder='To';slot.append(a,el('span','and','muted'),b);return;
+  }
+  const mode=document.createElement('select');mode.className='right-mode';
+  for(const pair of [['literal','value'],['variable','parameter']]){const o=document.createElement('option');o.value=pair[0];o.textContent=pair[1];mode.append(o);}
+  mode.value=node.right_type==='variable'?'variable':'literal';
+  const holder=el('span',null,'right-value-holder');
+  const draw=()=>{
+    holder.replaceChildren();
+    if(mode.value==='variable'){
+      const ps=parameterSelect(node.right_type==='variable'?String(node.right||''):'',false);ps.className='right-variable';holder.append(ps);
+    }else holder.append(literalInput(node.right_type==='variable'?'':node.right,'condition-value'));
+  };
+  mode.onchange=draw;draw();slot.append(mode,holder);
+}
+function addCondition(group,node={}){
+  const row=el('div',null,'condition-row');row.dataset.kind='condition';
+  const left=parameterSelect(node.left||ruleParameters.find(v=>v.startsWith('current.'))||'',true);left.className='condition-left';
+  const op=operatorSelect(node.operator||'eq');op.className='condition-operator';
+  const right=el('div',null,'condition-right');
+  const remove=el('button','Remove');remove.type='button';remove.className='danger';remove.onclick=()=>row.remove();
+  row.append(left,op,right,remove);
+  group.querySelector(':scope > .group-items').append(row);
+  op.onchange=()=>renderConditionRight(row,{});
+  renderConditionRight(row,node);
+  return row;
+}
+function addConditionGroup(parent,node={kind:'group',logic:'all',items:[]},root=false){
+  const g=el('div',null,'condition-group');g.dataset.kind='group';
+  const head=el('div',null,'group-head');
+  const logic=document.createElement('select');logic.className='group-logic';
+  for(const pair of [['all','All of these are true'],['any','Any of these are true']]){const o=document.createElement('option');o.value=pair[0];o.textContent=pair[1];logic.append(o);}
+  logic.value=node.logic||'all';
+  const add=el('button','Add condition');add.type='button';
+  const addGroup=el('button','Add group');addGroup.type='button';
+  head.append(logic,add,addGroup);
+  if(!root){const remove=el('button','Remove group');remove.type='button';remove.className='danger';remove.onclick=()=>g.remove();head.append(remove);}
+  const items=el('div',null,'group-items');g.append(head,items);
+  (parent||$('#rule-condition-builder')).append(g);
+  add.onclick=()=>addCondition(g,{});
+  addGroup.onclick=()=>addConditionGroup(items,{kind:'group',logic:'any',items:[{kind:'condition'}]},false);
+  const children=node.items||[];
+  for(const child of children){if(child.kind==='group')addConditionGroup(items,child,false);else addCondition(g,child);}
+  if(!children.length)addCondition(g,{});
+  return g;
+}
+function conditionFromRow(row){
+  const left=row.querySelector('.condition-left').value,operator=row.querySelector('.condition-operator').value;
+  const out={kind:'condition',left:left,operator:operator};
+  if(NO_RIGHT.has(operator))return out;
+  if(RANGE_RIGHT.has(operator)){
+    out.right=[parseLooseJson(row.querySelector('.range-a').value,''),parseLooseJson(row.querySelector('.range-b').value,'')];return out;
+  }
+  const mode=row.querySelector('.right-mode').value;
+  if(mode==='variable'){out.right_type='variable';out.right=row.querySelector('.right-variable').value;}
+  else out.right=parseLooseJson(row.querySelector('.condition-value').value,'');
+  return out;
+}
+function conditionFromGroup(group){
+  const items=[];
+  for(const child of group.querySelector(':scope > .group-items').children){items.push(child.dataset.kind==='group'?conditionFromGroup(child):conditionFromRow(child));}
+  return {kind:'group',logic:group.querySelector(':scope > .group-head > .group-logic').value,items:items};
+}
+function renderConditionBuilder(condition){
+  const root=$('#rule-condition-builder');root.replaceChildren();
+  const node=condition&&condition.kind==='group'?condition:{kind:'group',logic:'all',items:condition?[condition]:[]};
+  addConditionGroup(root,node,true);
+}
+function actionArgumentNames(method){
+  const args=actionCatalog[method]?.arguments;
+  return Array.isArray(args)?args:Object.keys(args||{});
+}
+function renderActionArguments(row,item={}){
+  const holder=row.querySelector('.action-arguments');holder.replaceChildren();
+  const method=row.querySelector('.action-method').value;
+  const existing=item.method===method?(item.arguments||{}):{};
+  const names=actionArgumentNames(method);
+  for(const name of names){
+    const box=el('div',null,'action-arg');box.dataset.name=name;
+    const label=el('label',name);
+    const mode=document.createElement('select');mode.className='arg-mode';
+    for(const pair of [['literal','value'],['variable','parameter']]){const o=document.createElement('option');o.value=pair[0];o.textContent=pair[1];mode.append(o);}
+    const raw=existing[name];
+    const match=typeof raw==='string'?raw.match(/^\\{\\{\\s*([A-Za-z0-9_.-]+)\\s*\\}\\}$/):null;
+    mode.value=match?'variable':'literal';
+    const valueHolder=el('span',null,'arg-value-holder');
+    const draw=()=>{
+      valueHolder.replaceChildren();
+      if(mode.value==='variable'){
+        const ps=parameterSelect(match?match[1]:'',false);ps.className='arg-variable';valueHolder.append(ps);
+      }else{
+        const input=literalInput(match?'':raw,'arg-literal');input.placeholder='Value';valueHolder.append(input);
+      }
+    };
+    mode.onchange=draw;draw();label.append(mode,valueHolder);box.append(label);holder.append(box);
+  }
+  if(!names.length)holder.append(el('span','No arguments required','muted'));
+}
+function addRuleAction(item={}){
+  const row=el('div',null,'action-row');
+  const select=document.createElement('select');select.className='action-method';
+  for(const entry of Object.entries(actionCatalog)){
+    const name=entry[0],info=entry[1],o=document.createElement('option');
+    o.value=name;o.textContent=name+(info.enabled===false?' (disabled)':'');if(name===item.method)o.selected=true;select.append(o);
+  }
+  const args=el('div',null,'action-arguments');
+  const remove=el('button','Remove');remove.type='button';remove.className='danger';remove.onclick=()=>row.remove();
+  row.append(select,args,remove);$('#rule-action-builder').append(row);
+  select.onchange=()=>renderActionArguments(row,{});
+  renderActionArguments(row,item);
+}
+function actionsFromBuilder(){
+  return [...$('#rule-action-builder').children].map(row=>{
+    const method=row.querySelector('.action-method').value,argumentsObj={};
+    for(const box of row.querySelectorAll('.action-arg')){
+      const name=box.dataset.name,mode=box.querySelector('.arg-mode').value;
+      argumentsObj[name]=mode==='variable'?'{{ '+box.querySelector('.arg-variable').value+' }}':parseLooseJson(box.querySelector('.arg-literal').value,'');
+    }
+    return {method:method,arguments:argumentsObj};
+  });
+}
+function renderActionBuilder(items=[]){$('#rule-action-builder').replaceChildren();for(const item of items)addRuleAction(item);}
+function syncRawRule(){
+  const group=$('#rule-condition-builder > .condition-group');
+  const condition=group?conditionFromGroup(group):{kind:'group',logic:'all',items:[]};
+  const actionItems=actionsFromBuilder();
+  $('#rule-condition').value=JSON.stringify(condition,null,2);
+  $('#rule-actions').value=JSON.stringify(actionItems,null,2);
+  return {condition:condition,actions:actionItems};
+}
+async function openRule(rule){
+  edit.rule=rule?.id||null;
+  if(!ruleParameters.length)ruleParameters=await api('/api/global-variables');
+  if(!Object.keys(actionCatalog).length)actionCatalog=await api('/api/modules/actions');
+  $('#rule-edit').hidden=false;
+  $('#rule-name').value=rule?.name||'';
+  $('#rule-priority').value=rule?.priority??100;
+  $('#rule-cooldown').value=rule?.cooldown_seconds??0;
+  $('#rule-enabled').checked=rule?!!rule.enabled:true;
   $('#rule-stop').checked=!!rule?.stop_processing;
-  $('#rule-condition').value=JSON.stringify(rule?.condition||{kind:'condition',left:'current.presence.current_user',operator:'eq',right:'JGRA'},null,2);
-  $('#rule-actions').value=JSON.stringify(rule?.actions||[],null,2);
+  renderConditionBuilder(rule?.condition||{kind:'group',logic:'all',items:[]});
+  renderActionBuilder(rule?.actions||[]);
+  syncRawRule();
   $('#rule-edit').scrollIntoView({behavior:'smooth'});
+}
+function loadRawRuleIntoBuilder(){
+  try{renderConditionBuilder(JSON.parse($('#rule-condition').value));renderActionBuilder(JSON.parse($('#rule-actions').value));notice('Loaded raw JSON into builder');}
+  catch(err){notice('Invalid rule JSON: '+err.message)}
 }
 async function saveRule(e){
   e.preventDefault();
   try{
-    const data={name:$('#rule-name').value,priority:Number($('#rule-priority').value),cooldown_seconds:Number($('#rule-cooldown').value),enabled:$('#rule-enabled').checked,stop_processing:$('#rule-stop').checked,condition:JSON.parse($('#rule-condition').value),actions:JSON.parse($('#rule-actions').value)};
+    const built=syncRawRule();
+    const data={name:$('#rule-name').value,priority:Number($('#rule-priority').value),cooldown_seconds:Number($('#rule-cooldown').value),enabled:$('#rule-enabled').checked,stop_processing:$('#rule-stop').checked,condition:built.condition,actions:built.actions};
     await api('/api/global-rules'+(edit.rule?'/'+edit.rule:''),edit.rule?'PUT':'POST',data);
     $('#rule-edit').hidden=true;await refreshRules();notice('Rule saved');
   }catch(err){notice(err.message)}
 }
+
 function switchTab(){
   let tab=location.hash.slice(1)||'state';
   if(!['state','sources','variables','actions','rules','settings'].includes(tab))tab='state';
@@ -301,6 +493,8 @@ $('#action-form').onsubmit=e=>saveForm('action',e);
 $('#variable-form').onsubmit=saveVariable;
 $('#derived-form').onsubmit=saveDerived;
 $('#rule-form').onsubmit=saveRule;
+$('#add-rule-action').onclick=()=>addRuleAction({});
+$('#apply-raw-rule').onclick=loadRawRuleIntoBuilder;
 $('#settings-form').onsubmit=async e=>{
   e.preventDefault();
   try{await api('/api/settings','PUT',{rule_interval_seconds:Number(e.target.elements.rule_interval_seconds.value)});notice('Settings saved');}
