@@ -146,9 +146,40 @@ async function refreshActions(){
   actionCatalog=await api('/api/modules/actions');
   $('#action-hint').textContent='Available actions: '+Object.keys(actionCatalog).join(', ');
 }
+async function duplicateRule(rule){
+  const copy={
+    name:'Copy of '+rule.name,
+    enabled:false,
+    priority:rule.priority,
+    cooldown_seconds:rule.cooldown_seconds,
+    stop_processing:!!rule.stop_processing,
+    condition:rule.condition,
+    actions:rule.actions
+  };
+  try{
+    await api('/api/global-rules','POST',copy);
+    await refreshRules();
+    notice('Duplicated rule as '+copy.name+' (disabled)');
+  }catch(err){notice(err?.message||String(err))}
+}
 async function refreshRules(){
   [rules,ruleParameters]=await Promise.all([api('/api/global-rules'),api('/api/global-variables')]);
-  renderList('#rules-list',rules,o=>openRule(o),o=>remove('global-rules',o.id,refreshRules));
+  const root=$('#rules-list');root.replaceChildren();
+  for(const rule of rules){
+    const row=el('div',null,'panel rule'),left=el('div');
+    left.append(el('strong',rule.name),el('p',`Priority ${rule.priority} · ${rule.enabled?'Enabled':'Disabled'}`,'muted'));
+    row.append(left);
+    const buttons=el('div',null,'buttons');
+    for(const [label,fn] of [
+      ['Edit',()=>openRule(rule)],
+      ['Duplicate',()=>duplicateRule(rule)],
+      ['Delete',()=>remove('global-rules',rule.id,refreshRules)]
+    ]){
+      const b=el('button',label);b.type='button';b.onclick=fn;buttons.append(b);
+    }
+    row.append(buttons);root.append(row);
+  }
+  if(!rules.length)root.append(el('p','Nothing configured yet.','hint'));
 }
 async function refreshVariables(){
   variables=await api('/api/custom-variables');
