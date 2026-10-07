@@ -72,7 +72,7 @@ async function objCard(name,info){
       summary.textContent=`Available source fields (${discovered.fields.length})`;
       details.append(summary);
       const ftable=el('table',null,'field-table'),fh=el('tr');
-      for(const heading of ['Observed path','Last value','Type','Status','Last seen',''])fh.append(el('th',heading));
+      for(const heading of ['Observed path','Last observed value','Type','Status','Last seen',''])fh.append(el('th',heading));
       ftable.append(fh);
       for(const field of discovered.fields){
         const tr=el('tr'),pathTd=el('td'),code=el('code',field.path);
