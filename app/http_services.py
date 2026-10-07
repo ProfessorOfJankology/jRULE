@@ -138,7 +138,7 @@ def select_properties(payload,mapping):
     return props
 
 def discover_fields(payload,limit=500):
-    """Flatten observed JSON into dotted paths with sample values for the UI."""
+    """Flatten the current JSON response into dotted paths."""
     fields=[]
     def walk(value,path):
         if len(fields)>=limit:return
@@ -155,6 +155,32 @@ def discover_fields(payload,limit=500):
     walk(payload,'')
     return fields
 
+def merge_discovered_fields(previous,current,seen_at,limit=1000):
+    """Keep a cumulative catalogue while marking what exists in this poll."""
+    merged={}
+    for field in previous or []:
+        path=field.get('path')
+        if not path:continue
+        item=dict(field)
+        item['present']=False
+        item.setdefault('first_seen',item.get('last_seen'))
+        merged[path]=item
+    for field in current or []:
+        path=field.get('path')
+        if not path:continue
+        old=merged.get(path,{})
+        merged[path]={
+            'path':path,
+            'value':field.get('value'),
+            'type':field.get('type'),
+            'present':True,
+            'first_seen':old.get('first_seen') or old.get('last_seen') or seen_at,
+            'last_seen':seen_at,
+        }
+    values=list(merged.values())
+    values.sort(key=lambda x:(not x.get('present',False),x.get('path','').lower()))
+    return values[:limit]
+
 async def poll_source(name):
     async with state.connection() as conn:
         row=await (await conn.execute('SELECT s.* FROM http_sources s JOIN objects o ON o.name=s.name WHERE s.name=? AND s.enabled=1 AND o.enabled=1',(name,))).fetchone()
@@ -169,7 +195,9 @@ async def poll_source(name):
             payload=resp.json()
             props=select_properties(payload,json.loads(row['mapping_json']))
             if len(props)>250:raise ValueError('Source exposes more than 250 properties')
-            discovered=discover_fields(payload)
+            observed=discover_fields(payload)
+            previous_discovered=json.loads(row['discovered_json'] or '[]')
+            discovered=merge_discovered_fields(previous_discovered,observed,now)
         await state.update_properties(name,props)
         async with state.connection() as conn:
             await conn.execute('UPDATE http_sources SET last_attempt=?,last_success=?,last_error=NULL,discovered_json=? WHERE name=?',(now,now,json.dumps(discovered,default=str),name))
