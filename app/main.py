@@ -67,16 +67,14 @@ class SourceIn(BaseModel):
     name:str
     url:str
     interval_seconds:int=60
-    mapping:dict[str,str]=Field(default_factory=dict)
+    mapping:dict[str,Any]=Field(default_factory=dict)
     enabled:bool=True
 
 def validate_source(payload:SourceIn):
     try:
         http.validate_name(payload.name)
         http.validate_endpoint(payload.url)
-        for name,path in payload.mapping.items():
-            http.validate_name(name)
-            if not isinstance(path,str) or len(path)>255:raise ValueError('Invalid JSON property mapping')
+        http.validate_mapping(payload.mapping)
         if not 5<=payload.interval_seconds<=86400:raise ValueError('Polling interval must be 5..86400 seconds')
     except ValueError as e:raise HTTPException(400,str(e)) from e
 
@@ -141,6 +139,46 @@ async def push(name:str,payload:PushBody,x_jrule_token:str|None=Header(None)):
         row=await (await conn.execute("SELECT enabled FROM objects WHERE name=? AND module='push'",(name,))).fetchone()
     if not row or not row['enabled']:raise HTTPException(404,'Unknown push object')
     await state.update_properties(name,payload.properties)
+    return {'ok':True}
+
+
+class VariableIn(BaseModel):
+    name:str
+    value:Any=None
+
+@app.get('/api/custom-variables')
+async def list_custom_variables():
+    snapshot=await state.pool()
+    props=snapshot.get('variables',{}).get('properties',{})
+    return [{'name':name,**value} for name,value in sorted(props.items())]
+
+@app.post('/api/custom-variables')
+async def create_custom_variable(payload:VariableIn):
+    try:http.validate_name(payload.name)
+    except ValueError as e:raise HTTPException(400,str(e)) from e
+    async with state.connection() as conn:
+        exists=await (await conn.execute("SELECT 1 FROM object_properties WHERE object_name='variables' AND property_name=?",(payload.name,))).fetchone()
+    if exists:raise HTTPException(409,'Variable already exists')
+    await state.update_properties('variables',{payload.name:payload.value})
+    return {'ok':True,'name':payload.name}
+
+@app.put('/api/custom-variables/{name}')
+async def update_custom_variable(name:str,payload:VariableIn):
+    if name!=payload.name:raise HTTPException(400,'Cannot rename variable')
+    try:http.validate_name(name)
+    except ValueError as e:raise HTTPException(400,str(e)) from e
+    async with state.connection() as conn:
+        exists=await (await conn.execute("SELECT 1 FROM object_properties WHERE object_name='variables' AND property_name=?",(name,))).fetchone()
+    if not exists:raise HTTPException(404,'Unknown variable')
+    await state.update_properties('variables',{name:payload.value})
+    return {'ok':True}
+
+@app.delete('/api/custom-variables/{name}')
+async def delete_custom_variable(name:str):
+    async with state.connection() as conn:
+        cur=await conn.execute("DELETE FROM object_properties WHERE object_name='variables' AND property_name=?",(name,))
+        if cur.rowcount==0:raise HTTPException(404,'Unknown variable')
+        await conn.commit()
     return {'ok':True}
 
 class ActionIn(BaseModel):
