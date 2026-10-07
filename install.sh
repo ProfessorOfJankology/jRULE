@@ -5,9 +5,15 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 id jrule >/dev/null 2>&1 || useradd --system --home-dir /opt/jrule --shell /usr/sbin/nologin jrule
 install -d -m 0755 /opt/jrule /opt/jrule/app /opt/jrule/app/static /opt/jrule/scripts /etc/jrule
 install -d -o jrule -g jrule -m 0750 /var/lib/jrule
-cp -a "$HERE/app/." /opt/jrule/app/
-install -m 0755 "$HERE/scripts/load-japi-key.sh" /opt/jrule/scripts/load-japi-key.sh
-install -m 0644 "$HERE/requirements.txt" /opt/jrule/requirements.txt
+
+# The preferred deployment is a Git checkout directly at /opt/jrule. In that
+# case the source and destination are the same tree, so do not copy files over
+# themselves. Package/extracted installs from another directory still work.
+if [[ "$HERE" != "/opt/jrule" ]]; then
+  cp -a "$HERE/app/." /opt/jrule/app/
+  install -m 0755 "$HERE/scripts/load-japi-key.sh" /opt/jrule/scripts/load-japi-key.sh
+  install -m 0644 "$HERE/requirements.txt" /opt/jrule/requirements.txt
+fi
 if [[ ! -f /etc/jrule/jrule.env ]];then
   install -m 0600 /dev/null /etc/jrule/jrule.env
   cat >/etc/jrule/jrule.env <<'EOF'
@@ -16,7 +22,6 @@ JRULE_BIND=127.0.0.1
 JRULE_PORT=8096
 JRULE_ENABLE_ACTIONS=0
 # JRULE_ADMIN_TOKEN=<long-random-token>
-# JRULE_PUSH_TOKEN=<different-long-random-token>
 # jAPI key is read from /etc/japi/api.env by a root-only systemd pre-start hook.
 JRULE_JAPI_BASE_URL=http://127.0.0.1:8088
 EOF
