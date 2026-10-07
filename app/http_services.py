@@ -230,7 +230,15 @@ async def invoke_action(name,arguments,context):
     payload=render_body(json.loads(row['body_json']),values)
     async with httpx.AsyncClient(timeout=row['timeout_seconds'],follow_redirects=False,trust_env=False) as client:
         resp=await client.post(japi_url(row['url']),headers=headers_for(),json=payload)
-        resp.raise_for_status()
+        if resp.is_error:
+            try:
+                response_detail=resp.json()
+            except Exception:
+                response_detail=resp.text[:2000]
+            raise RuntimeError(
+                f"Action {name} failed: HTTP {resp.status_code}; response={json.dumps(response_detail,default=str)}; "
+                f"payload={json.dumps(payload,default=str)}"
+            )
     await db.log_event(level='info',event_type='http_action_sent',message=f'Action {name} completed: HTTP {resp.status_code}')
 
 async def loop(stop):
