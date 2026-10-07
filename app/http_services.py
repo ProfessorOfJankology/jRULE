@@ -192,8 +192,10 @@ async def invoke_action(name,arguments,context):
     async with state.connection() as conn:
         row=await (await conn.execute('SELECT * FROM http_actions WHERE name=? AND enabled=1',(name,))).fetchone()
     if not row:raise ValueError(f'Unknown or disabled HTTP action: {name}')
-    # Arguments are accessible as {{ args.some_field }} in a configured POST body.
-    values={**context,'args':arguments}
+    # Resolve rule-supplied argument templates first, then expose them as
+    # {{ args.some_field }} inside the configured jAPI body template.
+    rendered_arguments=render_body(arguments,context)
+    values={**context,'args':rendered_arguments}
     payload=render_body(json.loads(row['body_json']),values)
     async with httpx.AsyncClient(timeout=row['timeout_seconds'],follow_redirects=False,trust_env=False) as client:
         resp=await client.post(japi_url(row['url']),headers=headers_for(),json=payload)
