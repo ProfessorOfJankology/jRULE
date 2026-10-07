@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from app import db, state
+from app import db, state, modules
 from app.http_services import json_path, select_properties, validate_endpoint, render_body
 from app.rules import evaluate_condition
 
@@ -75,6 +75,17 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
                          '/v1/../foo','/v1/%2e%2e/foo','//evil','/v1/a#fragment'):
             with self.subTest(endpoint=endpoint),self.assertRaises(ValueError):
                 validate_endpoint(endpoint)
+
+    async def test_custom_variable_action(self):
+        with patch.dict(os.environ,{'JRULE_ENABLE_ACTIONS':'1'}):
+            await modules.invoke('variables.set','',{'name':'armed','value':True},{})
+        result=await state.pool()
+        self.assertTrue(result['variables']['properties']['armed']['current'])
+        with patch.dict(os.environ,{'JRULE_ENABLE_ACTIONS':'1'}):
+            await modules.invoke('variables.set','',{'name':'armed','value':False},{})
+        result=await state.pool()
+        self.assertTrue(result['variables']['properties']['armed']['last'])
+        self.assertFalse(result['variables']['properties']['armed']['current'])
 
     def test_japi_url_uses_server_side_base(self):
         from app.http_services import japi_url
