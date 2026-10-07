@@ -2,7 +2,7 @@
 const $=s=>document.querySelector(s);
 let sources=[],actions=[],rules=[],variables=[],edit={source:null,action:null,rule:null,variable:null};
 
-function el(t,text,cls){const e=document.createElement(t);if(text!==undefined)e.textContent=String(text);if(cls)e.className=cls;return e;}
+function el(t,text,cls){const e=document.createElement(t);if(text!==undefined&&text!==null)e.textContent=String(text);if(cls)e.className=cls;return e;}
 function notice(s){$('#notice').textContent=s;$('#notice').classList.add('visible');}
 async function api(url,method='GET',body){
   const headers={};
