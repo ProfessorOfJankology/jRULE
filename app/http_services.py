@@ -124,11 +124,36 @@ def validate_mapping(mapping):
     return mapping
 
 def select_properties(payload,mapping):
+    if not isinstance(payload,dict):
+        raise ValueError('Source JSON must be an object')
+    # Keep usable top-level fields available even when derived properties exist.
+    props={}
+    for k,v in payload.items():
+        try:props[validate_name(k)]=v
+        except ValueError:pass
     if mapping:
         validate_mapping(mapping)
-        return {validate_name(alias):_mapping_value(payload,spec) for alias,spec in mapping.items()}
-    if not isinstance(payload,dict):raise ValueError('Source JSON must be an object, or supply a property mapping')
-    return {validate_name(k):v for k,v in payload.items()}
+        for alias,spec in mapping.items():
+            props[validate_name(alias)]=_mapping_value(payload,spec)
+    return props
+
+def discover_fields(payload,limit=500):
+    """Flatten observed JSON into dotted paths with sample values for the UI."""
+    fields=[]
+    def walk(value,path):
+        if len(fields)>=limit:return
+        if path:
+            fields.append({'path':path,'value':value,'type':type(value).__name__})
+        if isinstance(value,dict):
+            for key,item in value.items():
+                child=f'{path}.{key}' if path else str(key)
+                walk(item,child)
+        elif isinstance(value,list):
+            for idx,item in enumerate(value[:50]):
+                child=f'{path}.{idx}' if path else str(idx)
+                walk(item,child)
+    walk(payload,'')
+    return fields
 
 async def poll_source(name):
     async with state.connection() as conn:
@@ -141,11 +166,13 @@ async def poll_source(name):
             resp=await client.get(japi_url(row['url']),headers=headers_for())
             resp.raise_for_status()
             if len(resp.content)>1048576:raise ValueError('Source response exceeds 1 MiB')
-            props=select_properties(resp.json(),json.loads(row['mapping_json']))
+            payload=resp.json()
+            props=select_properties(payload,json.loads(row['mapping_json']))
             if len(props)>250:raise ValueError('Source exposes more than 250 properties')
+            discovered=discover_fields(payload)
         await state.update_properties(name,props)
         async with state.connection() as conn:
-            await conn.execute('UPDATE http_sources SET last_attempt=?,last_success=?,last_error=NULL WHERE name=?',(now,now,name))
+            await conn.execute('UPDATE http_sources SET last_attempt=?,last_success=?,last_error=NULL,discovered_json=? WHERE name=?',(now,now,json.dumps(discovered,default=str),name))
             await conn.commit()
         return {'name':name,'updated':list(props)}
     except Exception as exc:
