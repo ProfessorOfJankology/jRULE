@@ -1,12 +1,20 @@
 """Runtime action registry for configured jAPI actions and built-in variables."""
+import json
 import os
+import re
 from . import state
 from .http_services import invoke_action, render_body, validate_name
+
+_ARG_RE=re.compile(r'\{\{\s*args\.([A-Za-z][A-Za-z0-9_-]*)\s*\}\}')
+def _action_arguments(body_json):
+    try:text=json.dumps(json.loads(body_json),separators=(',',':'))
+    except Exception:text=str(body_json)
+    return sorted(set(_ARG_RE.findall(text)))
 
 async def catalog():
     async with state.connection() as conn:
         rows=await (await conn.execute('SELECT name,url,enabled,body_json FROM http_actions ORDER BY name')).fetchall()
-    result={r['name']:{'enabled':bool(r['enabled']),'kind':'japi.post','url':r['url'],'body_json':r['body_json']} for r in rows}
+    result={r['name']:{'enabled':bool(r['enabled']),'kind':'japi.post','url':r['url'],'body_json':r['body_json'],'arguments':_action_arguments(r['body_json'])} for r in rows}
     result['variables.set']={
         'enabled':True,
         'kind':'builtin',
