@@ -31,6 +31,10 @@ async def init_db():
         cols={row[1] for row in await (await conn.execute("PRAGMA table_info(http_sources)")).fetchall()}
         if 'discovered_json' not in cols:
             await conn.execute("ALTER TABLE http_sources ADD COLUMN discovered_json TEXT NOT NULL DEFAULT '[]'")
+        if 'poll_sequence' not in cols:
+            await conn.execute("ALTER TABLE http_sources ADD COLUMN poll_sequence INTEGER NOT NULL DEFAULT 0")
+        if 'checks_since_poll' not in cols:
+            await conn.execute("ALTER TABLE http_sources ADD COLUMN checks_since_poll INTEGER NOT NULL DEFAULT 0")
         await conn.execute("INSERT OR IGNORE INTO settings(key,value_json) VALUES('rule_interval_seconds','10')")
         await conn.execute("INSERT OR IGNORE INTO objects(name,module,type,config_json,enabled) VALUES('variables','builtin.variables','variables','{}',1)")
         await conn.commit()
