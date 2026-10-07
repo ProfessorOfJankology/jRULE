@@ -135,6 +135,16 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             render_body({'embedded':'user={{ args.username }}'},ctx)
 
+    def test_structured_action_parameter_transform(self):
+        ctx={'current':{'Presence':{'workstation_users':{'ESC-UTILITY-01':['jordan.grey']}}}}
+        arg={'kind':'parameter','expression':{
+            'source':'current.Presence.workstation_users.ESC-UTILITY-01',
+            'transforms':[{'op':'first'}]
+        }}
+        self.assertEqual(modules.resolve_action_argument(arg,ctx),'jordan.grey')
+        with self.assertRaises(ValueError):
+            modules.resolve_action_argument({'kind':'parameter','expression':'current.Presence.workstation_users.ESC-R1'},ctx)
+
     def test_endpoint_is_japi_only(self):
         self.assertEqual(validate_endpoint('/v1/mdserver/sessions'),'/v1/mdserver/sessions')
         self.assertEqual(validate_endpoint('/v1/mdserver/workstations?include_users=true'),'/v1/mdserver/workstations?include_users=true')
