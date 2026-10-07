@@ -29,10 +29,20 @@ def resolve_action_argument(value,context):
     if isinstance(value,dict) and value.get("kind")=="parameter" and "expression" in value:
         expr=value["expression"]
         if isinstance(expr,str):
-            return resolve_template_value(expr,context)
+            try:
+                return resolve_template_value(expr,context)
+            except ValueError as exc:
+                if "was not found" in str(exc):
+                    return None
+                raise
         if not isinstance(expr,dict) or not expr.get("source"):
             raise ValueError("Malformed action parameter expression")
-        resolved=resolve_template_value(str(expr["source"]),context)
+        try:
+            resolved=resolve_template_value(str(expr["source"]),context)
+        except ValueError as exc:
+            if "was not found" in str(exc):
+                return None
+            raise
         for transform in expr.get("transforms") or []:
             resolved=apply_transform(resolved,transform)
         return resolved
