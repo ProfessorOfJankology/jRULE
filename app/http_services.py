@@ -211,9 +211,15 @@ def render_body(value,context):
     if isinstance(value,str):
         match=_EXACT_TEMPLATE.fullmatch(value)
         if match:
-            # A whole-value template preserves the underlying JSON type,
-            # including null, booleans, numbers, lists and objects.
-            return resolve_template_value(match.group(1),context)
+            # A whole-value template preserves the underlying JSON type.
+            # Missing paths intentionally become JSON null so disappearance
+            # events can clear downstream state.
+            try:
+                return resolve_template_value(match.group(1),context)
+            except ValueError as exc:
+                if "was not found" in str(exc):
+                    return None
+                raise
         return render_template(value,context)
     if isinstance(value,list):return [render_body(v,context) for v in value]
     if isinstance(value,dict):return {k:render_body(v,context) for k,v in value.items()}
