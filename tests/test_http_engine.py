@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from app import db, state, modules
-from app.http_services import json_path, select_properties, validate_endpoint, render_body
+from app.http_services import json_path, select_properties, discover_fields, validate_endpoint, render_body
 from app.rules import evaluate_condition
 
 class EngineTests(unittest.IsolatedAsyncioTestCase):
@@ -53,7 +53,9 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
     def test_json_mapping(self):
         data={'ok':True,'workstations':[{'hostname':'ESC-R1','username':'JGRA'}]}
         self.assertEqual(json_path(data,'workstations.0.username'),'JGRA')
-        self.assertEqual(select_properties(data,{'current_user':'workstations.0.username'}),{'current_user':'JGRA'})
+        selected=select_properties(data,{'current_user':'workstations.0.username'})
+        self.assertTrue(selected['ok'])
+        self.assertEqual(selected['current_user'],'JGRA')
         presence={'connected_workstations':['ESC-R1'],'workstation_users':{'ESC-R1':['JGRA']}}
         mapping={
             'current_user':{'path':'workstation_users.ESC-R1.0','op':'value','default':None},
@@ -62,6 +64,12 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(select_properties(presence,mapping),{'current_user':'JGRA','present':True})
         gone={'connected_workstations':[],'workstation_users':{}}
         self.assertEqual(select_properties(gone,mapping),{'current_user':None,'present':False})
+
+    def test_discovered_fields(self):
+        fields=discover_fields({'workstation_users':{'ESC-R1':['JGRA']},'count':1})
+        paths={f['path'] for f in fields}
+        self.assertIn('workstation_users.ESC-R1.0',paths)
+        self.assertIn('count',paths)
 
     def test_recursive_body_template(self):
         payload={'username':'{{ current.presence.user }}','value':'{{ args.message }}','other':[1,True]}
