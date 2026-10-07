@@ -50,7 +50,7 @@ async def variables():
     data=await state.pool()
     return sorted([f'{t}.{name}.{prop}' for name,obj in data.items() for prop in obj['properties'] for t in ('current','previous')]+[f'meta.{name}.{prop}.{t}' for name,obj in data.items() for prop in obj['properties'] for t in ('last_polled','last_changed')])
 @app.get('/api/modules/sources')
-async def source_catalog():return {'japi.get':{'kind':'poll','object_types':['japi'],'supports_mapping':True},'push':{'kind':'push','object_types':['custom']}}
+async def source_catalog():return {'japi.get':{'kind':'poll','object_types':['japi'],'supports_mapping':True,'supports_query':True,'supports_derived_fields':True}}
 @app.get('/api/modules/actions')
 async def action_catalog():return await modules.catalog()
 @app.get('/api/settings')
@@ -115,32 +115,6 @@ async def poll_now(name:str):
     try:return await http.poll_source(name)
     except ValueError as e:raise HTTPException(400,str(e)) from e
     except Exception as e:raise HTTPException(502,str(e)) from e
-
-class PushObject(BaseModel):
-    name:str
-    type:str='custom'
-@app.post('/api/objects')
-async def create_push_object(payload:PushObject):
-    try:
-        http.validate_name(payload.name)
-        await state.register_object(payload.name,'push',payload.type)
-    except ValueError as e:raise HTTPException(400,str(e)) from e
-    return {'ok':True}
-class PushBody(BaseModel):
-    properties:dict[str,Any]
-@app.post('/api/sources/push/{name}')
-async def push(name:str,payload:PushBody,x_jrule_token:str|None=Header(None)):
-    expected=os.getenv('JRULE_PUSH_TOKEN','')
-    if not expected:raise HTTPException(503,'Push disabled')
-    if not x_jrule_token or not hmac.compare_digest(expected,x_jrule_token):raise HTTPException(401,'Invalid push token')
-    if not 1<=len(payload.properties)<=100:raise HTTPException(400,'Supply 1..100 properties')
-    if len(json.dumps(payload.properties))>65536:raise HTTPException(413,'Payload too large')
-    async with state.connection() as conn:
-        row=await (await conn.execute("SELECT enabled FROM objects WHERE name=? AND module='push'",(name,))).fetchone()
-    if not row or not row['enabled']:raise HTTPException(404,'Unknown push object')
-    await state.update_properties(name,payload.properties)
-    return {'ok':True}
-
 
 class VariableIn(BaseModel):
     name:str
