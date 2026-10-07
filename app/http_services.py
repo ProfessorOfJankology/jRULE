@@ -205,38 +205,7 @@ async def poll_source(name):
         await db.log_event(level='error',event_type='source_poll_error',message=f'{name}: {exc}')
         raise
 
-_EXACT_TEMPLATE=re.compile(r'^\{\{\s*([A-Za-z0-9_.-]+)\s*\}\}
-async def invoke_action(name,arguments,context):
-    async with state.connection() as conn:
-        row=await (await conn.execute('SELECT * FROM http_actions WHERE name=? AND enabled=1',(name,))).fetchone()
-    if not row:raise ValueError(f'Unknown or disabled HTTP action: {name}')
-    # Resolve rule-supplied argument templates first, then expose them as
-    # {{ args.some_field }} inside the configured jAPI body template.
-    rendered_arguments=render_body(arguments,context)
-    values={**context,'args':rendered_arguments}
-    payload=render_body(json.loads(row['body_json']),values)
-    async with httpx.AsyncClient(timeout=row['timeout_seconds'],follow_redirects=False,trust_env=False) as client:
-        resp=await client.post(japi_url(row['url']),headers=headers_for(),json=payload)
-        resp.raise_for_status()
-    await db.log_event(level='info',event_type='http_action_sent',message=f'Action {name} completed: HTTP {resp.status_code}')
-
-async def loop(stop):
-    due={}
-    while not stop.is_set():
-        async with state.connection() as conn:
-            rows=await (await conn.execute('SELECT s.name,s.interval_seconds FROM http_sources s JOIN objects o ON s.name=o.name WHERE s.enabled=1 AND o.enabled=1')).fetchall()
-        now=asyncio.get_running_loop().time()
-        active={r['name'] for r in rows}
-        for name in list(due):
-            if name not in active:due.pop(name,None)
-        for row in rows:
-            name=row['name']
-            if now>=due.get(name,0):
-                due[name]=now+max(5,int(row['interval_seconds']))
-                try:await poll_source(name)
-                except Exception:pass
-        try:await asyncio.wait_for(stop.wait(),timeout=1)
-        except asyncio.TimeoutError:pass)
+_EXACT_TEMPLATE=re.compile(r'^\{\{\s*([A-Za-z0-9_.-]+)\s*\}\}$')
 
 def render_body(value,context):
     if isinstance(value,str):
