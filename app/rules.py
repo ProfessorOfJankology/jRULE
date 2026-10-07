@@ -24,15 +24,21 @@ def _get_path_strict(root: dict[str, Any] | None, path: str) -> tuple[bool, Any]
     return True, cur
 
 
+def resolve_template_value(path: str, ctx: dict[str, Any]) -> Any:
+    """Resolve a template path while distinguishing missing from JSON null."""
+    found,resolved=_get_path_strict(ctx,path)
+    if not found:
+        raise ValueError(f"template variable {path!r} was not found")
+    return resolved
+
+
 def render_template(value: Any, ctx: dict[str, Any]) -> str:
     """Render {{ variable.path }} placeholders without executing arbitrary code."""
     text = str(value if value is not None else "")
 
     def replace(match: re.Match[str]) -> str:
         path = match.group(1)
-        found, resolved = _get_path_strict(ctx, path)
-        if not found:
-            raise ValueError(f"template variable {path!r} was not found")
+        resolved = resolve_template_value(path, ctx)
         if resolved is None:
             raise ValueError(f"template variable {path!r} is null")
         if isinstance(resolved, bool):
