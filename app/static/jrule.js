@@ -291,15 +291,19 @@ function prettyParameter(p){
     const labels={checks_since_poll:'checks since poll',poll_sequence:'poll sequence',last_poll:'last poll'};
     return parts[1]+' · '+(labels[parts[2]]||parts[2]);
   }
-  if((parts[0]==='current'||parts[0]==='previous') && parts.length>=3)
-    return parts[1]+' · '+parts.slice(2).join('.')+' ('+parts[0]+')';
+  if(parts[0]==='current' && parts.length>=3)
+    return parts[1]+' · '+parts.slice(2).join('.');
   if(parts[0]==='meta' && parts.length>=4)
     return parts[1]+' · '+parts.slice(2,-1).join('.')+' · '+parts.at(-1);
   return p;
 }
-function parameterSelect(value='',leftSide=false){
+function canonicalParameter(p){
+  return p.startsWith('previous.')?'current.'+p.slice(9):p;
+}
+function parameterSelect(value=''){
   const s=document.createElement('select');
-  const values=(leftSide?ruleParameters.filter(v=>!v.startsWith('previous.')):ruleParameters);
+  const canonicalValue=canonicalParameter(value);
+  const values=[...new Set(ruleParameters.map(canonicalParameter))];
   const groups=new Map();
   for(const p of values){
     const parts=p.split('.');
@@ -309,11 +313,28 @@ function parameterSelect(value='',leftSide=false){
   }
   for(const [group,items] of groups){
     const og=document.createElement('optgroup');og.label=group;
-    for(const p of items){const o=document.createElement('option');o.value=p;o.textContent=prettyParameter(p);if(p===value)o.selected=true;og.append(o);}
+    for(const p of items){const o=document.createElement('option');o.value=p;o.textContent=prettyParameter(p);if(p===canonicalValue)o.selected=true;og.append(o);}
     s.append(og);
   }
-  if(value && !values.includes(value)){const o=document.createElement('option');o.value=value;o.textContent=value+' (missing)';o.selected=true;s.prepend(o);}
+  if(canonicalValue && !values.includes(canonicalValue)){const o=document.createElement('option');o.value=canonicalValue;o.textContent=canonicalValue+' (missing)';o.selected=true;s.prepend(o);}
   return s;
+}
+function parameterReferenceEditor(value=''){
+  const box=el('div',null,'parameter-reference');
+  const source=parameterSelect(value);source.className='parameter-source';
+  const state=document.createElement('select');state.className='parameter-state';
+  for(const pair of [['current','Current'],['previous','Previous']]){
+    const o=document.createElement('option');o.value=pair[0];o.textContent=pair[1];state.append(o);
+  }
+  state.value=value.startsWith('previous.')?'previous':'current';
+  const update=()=>{state.hidden=!source.value.startsWith('current.');};
+  source.onchange=update;update();box.append(source,state);return box;
+}
+function parameterReferenceValue(box){
+  let source=box.querySelector('.parameter-source').value;
+  const state=box.querySelector('.parameter-state');
+  if(source.startsWith('current.') && state && state.value==='previous')source='previous.'+source.slice(8);
+  return source;
 }
 function normalizeExpression(expr){
   if(typeof expr==='string')return {source:expr,transforms:[]};
@@ -337,14 +358,14 @@ function addTransformChip(holder,transform={op:'count'}){
 function expressionEditor(expr){
   const normalized=normalizeExpression(expr);
   const box=el('div',null,'expression-editor');
-  const source=parameterSelect(normalized.source,true);source.className='expression-source';box.append(source);
+  const source=parameterReferenceEditor(normalized.source);source.classList.add('expression-source');box.append(source);
   const transforms=el('div',null,'transform-list');box.append(transforms);
   for(const t of normalized.transforms)addTransformChip(transforms,t);
   const add=el('button','Transform');add.type='button';add.className='transform-add';add.onclick=()=>addTransformChip(transforms,{op:'count'});
   box.append(add);return box;
 }
 function expressionFromEditor(box){
-  const source=box.querySelector('.expression-source').value;
+  const source=parameterReferenceValue(box.querySelector('.expression-source'));
   const transforms=[...box.querySelectorAll('.transform-chip')].map(chip=>{
     const op=chip.querySelector('.transform-op').value;
     const result={op:op};
@@ -385,7 +406,7 @@ function renderConditionRight(row,node={}){
   const draw=()=>{
     holder.replaceChildren();
     if(mode.value==='variable'){
-      const ps=parameterSelect(node.right_type==='variable'?String(node.right||''):'',false);ps.className='right-variable';holder.append(ps);
+      const ps=parameterReferenceEditor(node.right_type==='variable'?String(node.right||''):'');ps.classList.add('right-variable');holder.append(ps);
     }else holder.append(literalInput(node.right_type==='variable'?'':node.right,'condition-value'));
   };
   mode.onchange=draw;draw();slot.append(mode,holder);
@@ -429,7 +450,7 @@ function conditionFromRow(row){
     out.right=[parseLooseJson(row.querySelector('.range-a').value,''),parseLooseJson(row.querySelector('.range-b').value,'')];return out;
   }
   const mode=row.querySelector('.right-mode').value;
-  if(mode==='variable'){out.right_type='variable';out.right=row.querySelector('.right-variable').value;}
+  if(mode==='variable'){out.right_type='variable';out.right=parameterReferenceValue(row.querySelector('.right-variable'));}
   else out.right=parseLooseJson(row.querySelector('.condition-value').value,'');
   return out;
 }
@@ -464,7 +485,7 @@ function renderActionArguments(row,item={}){
     const draw=()=>{
       valueHolder.replaceChildren();
       if(mode.value==='variable'){
-        const ps=parameterSelect(match?match[1]:'',false);ps.className='arg-variable';valueHolder.append(ps);
+        const ps=parameterReferenceEditor(match?match[1]:'');ps.classList.add('arg-variable');valueHolder.append(ps);
       }else{
         const input=literalInput(match?'':raw,'arg-literal');input.placeholder='Value';valueHolder.append(input);
       }
@@ -491,7 +512,7 @@ function actionsFromBuilder(){
     const method=row.querySelector('.action-method').value,argumentsObj={};
     for(const box of row.querySelectorAll('.action-arg')){
       const name=box.dataset.name,mode=box.querySelector('.arg-mode').value;
-      argumentsObj[name]=mode==='variable'?'{{ '+box.querySelector('.arg-variable').value+' }}':parseLooseJson(box.querySelector('.arg-literal').value,'');
+      argumentsObj[name]=mode==='variable'?'{{ '+parameterReferenceValue(box.querySelector('.arg-variable'))+' }}':parseLooseJson(box.querySelector('.arg-literal').value,'');
     }
     return {method:method,arguments:argumentsObj};
   });
