@@ -67,11 +67,13 @@ async function objCard(name,info){
       summary.textContent=`Available source fields (${discovered.fields.length})`;
       details.append(summary);
       const ftable=el('table',null,'field-table'),fh=el('tr');
-      for(const heading of ['Observed path','Sample value','Type',''])fh.append(el('th',heading));
+      for(const heading of ['Observed path','Last value','Type','Status','Last seen',''])fh.append(el('th',heading));
       ftable.append(fh);
       for(const field of discovered.fields){
         const tr=el('tr'),pathTd=el('td'),code=el('code',field.path);
         pathTd.append(code);tr.append(pathTd,el('td',shortValue(field.value)),el('td',field.type));
+        const status=el('span',field.present?'Present now':'Not in latest poll',field.present?'tag field-present':'tag field-absent');
+        const statusTd=el('td');statusTd.append(status);tr.append(statusTd,el('td',field.last_seen||''));
         const actionTd=el('td'),button=el('button','Add property');
         button.type='button';button.onclick=()=>openDerived(name,field);actionTd.append(button);tr.append(actionTd);
         ftable.append(tr);
