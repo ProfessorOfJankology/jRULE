@@ -198,11 +198,8 @@ async def poll_source(name):
             observed=discover_fields(payload)
             previous_discovered=json.loads(row['discovered_json'] or '[]')
             discovered=merge_discovered_fields(previous_discovered,observed,now)
-        await state.update_properties(name,props)
-        async with state.connection() as conn:
-            await conn.execute('UPDATE http_sources SET last_attempt=?,last_success=?,last_error=NULL,discovered_json=? WHERE name=?',(now,now,json.dumps(discovered,default=str),name))
-            await conn.commit()
-        return {'name':name,'updated':list(props)}
+        sequence=await state.apply_source_poll(name,props,json.dumps(discovered,default=str),now)
+        return {'name':name,'updated':list(props),'poll_sequence':sequence}
     except Exception as exc:
         async with state.connection() as conn:
             await conn.execute('UPDATE http_sources SET last_attempt=?,last_error=? WHERE name=?',(now,str(exc)[:500],name))
