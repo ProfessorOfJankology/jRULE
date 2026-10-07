@@ -28,6 +28,7 @@ async def init_db():
         CREATE TABLE IF NOT EXISTS event_log(id INTEGER PRIMARY KEY AUTOINCREMENT,created_at TEXT NOT NULL,level TEXT NOT NULL,event_type TEXT NOT NULL,message TEXT NOT NULL,details_json TEXT);
         """)
         await conn.execute("INSERT OR IGNORE INTO settings(key,value_json) VALUES('rule_interval_seconds','10')")
+        await conn.execute("INSERT OR IGNORE INTO objects(name,module,type,config_json,enabled) VALUES('variables','builtin.variables','variables','{}',1)")
         await conn.commit()
     finally: await conn.close()
 async def get_settings():
