@@ -96,7 +96,7 @@ async function objCard(name,info){
         ftable.append(tr);
       }
       if(!discovered.fields.length){
-        const tr=el('tr'),td=el('td','No observed fields yet. Poll this source first.','hint');td.colSpan=4;tr.append(td);ftable.append(tr);
+        const tr=el('tr'),td=el('td','No observed fields yet. Poll this source first.','hint');td.colSpan=6;tr.append(td);ftable.append(tr);
       }
       details.append(ftable);c.append(details);
     }catch(e){
