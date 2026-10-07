@@ -4,7 +4,7 @@ import os
 import re
 from . import state
 from .http_services import invoke_action, render_body, validate_name
-from .rules import resolve_expression
+from .rules import apply_transform, resolve_template_value
 
 _ARG_RE=re.compile(r'\{\{\s*args\.([A-Za-z][A-Za-z0-9_-]*)\s*\}\}')
 def _action_arguments(body_json):
@@ -27,7 +27,15 @@ async def catalog():
 def resolve_action_argument(value,context):
     """Resolve structured rule parameters while preserving literal JSON values."""
     if isinstance(value,dict) and value.get("kind")=="parameter" and "expression" in value:
-        return resolve_expression(value["expression"],context)
+        expr=value["expression"]
+        if isinstance(expr,str):
+            return resolve_template_value(expr,context)
+        if not isinstance(expr,dict) or not expr.get("source"):
+            raise ValueError("Malformed action parameter expression")
+        resolved=resolve_template_value(str(expr["source"]),context)
+        for transform in expr.get("transforms") or []:
+            resolved=apply_transform(resolved,transform)
+        return resolved
     if isinstance(value,list):
         return [resolve_action_argument(v,context) for v in value]
     if isinstance(value,dict):
