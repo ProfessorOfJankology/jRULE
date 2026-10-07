@@ -27,6 +27,10 @@ async def init_db():
         CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value_json TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS event_log(id INTEGER PRIMARY KEY AUTOINCREMENT,created_at TEXT NOT NULL,level TEXT NOT NULL,event_type TEXT NOT NULL,message TEXT NOT NULL,details_json TEXT);
         """)
+        # Lightweight schema migration for source-field discovery.
+        cols={row[1] for row in await (await conn.execute("PRAGMA table_info(http_sources)")).fetchall()}
+        if 'discovered_json' not in cols:
+            await conn.execute("ALTER TABLE http_sources ADD COLUMN discovered_json TEXT NOT NULL DEFAULT '[]'")
         await conn.execute("INSERT OR IGNORE INTO settings(key,value_json) VALUES('rule_interval_seconds','10')")
         await conn.execute("INSERT OR IGNORE INTO objects(name,module,type,config_json,enabled) VALUES('variables','builtin.variables','variables','{}',1)")
         await conn.commit()
