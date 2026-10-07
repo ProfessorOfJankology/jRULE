@@ -37,6 +37,29 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
         await state.update_properties('presence',{'user':'JGRA'})
         self.assertEqual((await state.pool())['presence']['properties']['user']['last'],'JGRA')
 
+    async def test_source_checks_since_poll_generation_guard(self):
+        await state.register_object('presence','japi.get','japi')
+        async with state.connection() as conn:
+            await conn.execute("""INSERT INTO http_sources
+                (name,url,interval_seconds,mapping_json,enabled)
+                VALUES(?,?,?,?,1)""",('presence','/v1/test',30,'{}'))
+            await conn.commit()
+        seq1=await state.apply_source_poll('presence',{'count':1},'[]','2026-10-07T08:00:00+00:00')
+        snap=await state.pool()
+        self.assertEqual(snap['presence']['source_meta']['checks_since_poll'],0)
+        await state.mark_sources_checked({'presence':seq1})
+        self.assertEqual((await state.pool())['presence']['source_meta']['checks_since_poll'],1)
+
+        seq2=await state.apply_source_poll('presence',{'count':2},'[]','2026-10-07T08:01:00+00:00')
+        self.assertGreater(seq2,seq1)
+        self.assertEqual((await state.pool())['presence']['source_meta']['checks_since_poll'],0)
+
+        # A stale evaluator from seq1 must not mark the newer poll as checked.
+        await state.mark_sources_checked({'presence':seq1})
+        self.assertEqual((await state.pool())['presence']['source_meta']['checks_since_poll'],0)
+        await state.mark_sources_checked({'presence':seq2})
+        self.assertEqual((await state.pool())['presence']['source_meta']['checks_since_poll'],1)
+
     async def test_cross_object_condition(self):
         await state.register_object('presence','japi.get','japi')
         await state.register_object('queue','japi.get','japi')
