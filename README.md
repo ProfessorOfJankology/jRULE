@@ -1,9 +1,9 @@
-# jRULE v0.3: jAPI rules engine
+# jRULE v0.4: jAPI rules engine
 
 A small self-hosted rules engine that observes **named jAPI GET sources** and runs **configured jAPI POST actions**. It is independent of Tapo Rules.
 
 - Deploys to `/opt/jrule` via `jrule.service`; SQLite lives in `/var/lib/jrule/jrule.db`.
-- Each source needs a **name**, a **relative jAPI endpoint** (e.g. `/v1/mdserver/sessions`) and optionally a polling interval and JSON property mapping.
+- Each source needs a **name**, a **relative jAPI endpoint** (query strings supported, e.g. `/v1/mdserver/workstations?include_users=true`) and optionally a polling interval and derived property mapping.
 - Each POST action needs a name, relative endpoint and JSON body template.
 - All sources publish into one shared global property pool. A poll advances `last`/`current` only for properties included in that poll.
 - Rules run on a configurable schedule and can inspect any `current.<object>.<property>`, `previous.<object>.<property>`, or `meta.<object>.<property>.last_changed`.
@@ -12,8 +12,8 @@ A small self-hosted rules engine that observes **named jAPI GET sources** and ru
 ## Install or upgrade on esc-japps
 
 ```bash
-unzip jRULE-v0.3-japi.zip
-cd jRULE-v0.3
+git clone https://github.com/ProfessorOfJankology/jRULE.git
+cd jRULE
 sudo bash install.sh
 sudo systemctl status jrule --no-pager
 ```
@@ -37,7 +37,56 @@ Set `JRULE_ADMIN_TOKEN` to a long random secret in `/etc/jrule/jrule.env` and re
 - Poll interval: 30 seconds
 - Mapping: `{}` (import top-level response fields; only names matching `[A-Za-z][A-Za-z0-9_-]*` are supported)
 
-Optional mapping extracts values using dotted paths (and numeric list indices): `{"user":"workstations.0.username"}`. Use the actual API response to choose mappings; don't assume a shape. A failed request updates source health but **does not** advance properties.
+Optional mappings can be plain dotted paths or derived mapping objects. Derived mappings support `value`, `first`, `count`, `exists`, `contains`, and `equals`, plus a default used when a path disappears. A failed request updates source health but **does not** advance properties.
+
+Example presence source:
+
+- Name: `presence`
+- Endpoint: `/v1/mdserver/workstations?include_users=true`
+- Interval: 30 seconds
+- Derived mapping for ESC-R1:
+
+```json
+{
+  "current_user": {
+    "path": "workstation_users.ESC-R1.0",
+    "op": "value",
+    "default": null
+  },
+  "present": {
+    "path": "connected_workstations",
+    "op": "contains",
+    "value": "ESC-R1",
+    "default": false
+  }
+}
+```
+
+When ESC-R1 disappears from the response, `current_user` advances to `null` and `present` advances to `false`, so rules can detect logout/disconnect using current/previous values.
+
+## Custom stored variables
+
+jRULE maintains a reserved `variables` object in the same global pool. Variables persist in SQLite and are available to rules as:
+
+```text
+current.variables.some_name
+previous.variables.some_name
+meta.variables.some_name.last_changed
+```
+
+They can be created and edited in the Variables tab. Rules can write them with the built-in action:
+
+```json
+{
+  "method": "variables.set",
+  "arguments": {
+    "name": "some_name",
+    "value": true
+  }
+}
+```
+
+Writing a variable advances only that variable's own current/last pair.
 
 ## Configure an action
 
