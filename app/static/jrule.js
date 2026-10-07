@@ -271,15 +271,19 @@ async function saveDerived(e){
 
 
 const OPERATOR_GROUPS=[
-  ['State',[['eq','is'],['ne','is not'],['is_true','is true'],['is_false','is false'],['exists','exists'],['not_exists','does not exist']]],
-  ['Change',[['changed','has changed'],['changed_to','changed to'],['changed_from','changed from']]],
-  ['Number / order',[['gt','is greater than'],['gte','is at least'],['lt','is less than'],['lte','is at most'],['between','is between'],['not_between','is not between']]],
+  ['Compare',[['eq','is'],['ne','is not'],['gt','is greater than'],['gte','is at least'],['lt','is less than'],['lte','is at most']]],
   ['Collection / text',[['contains','contains'],['not_contains','does not contain'],['in','is in'],['not_in','is not in']]],
-  ['Time',[['time_before','is before time'],['time_after','is after time'],['time_between','is between times'],['time_not_between','is not between times']]],
-  ['Date',[['date_before','is before date'],['date_after','is after date'],['date_between','is between dates'],['date_not_between','is not between dates']]]
+  ['State',[['exists','exists'],['not_exists','does not exist'],['changed','has changed'],['changed_to','changed to'],['changed_from','changed from']]]
 ];
-const NO_RIGHT=new Set(['exists','not_exists','is_true','is_false','changed']);
-const RANGE_RIGHT=new Set(['between','not_between','time_between','time_not_between','date_between','date_not_between']);
+const NO_RIGHT=new Set(['exists','not_exists','changed']);
+const RANGE_RIGHT=new Set();
+const TRANSFORMS=[
+  ['count','Count',false],['first','First item',false],['last','Last item',false],
+  ['key','Dictionary key',true],['index','List index',true],
+  ['as_number','As number',false],['as_string','As text',false],['as_boolean','As true/false',false],
+  ['as_date','As date',false],['as_time','As time',false],
+  ['lowercase','Lowercase',false],['uppercase','Uppercase',false]
+];
 
 function prettyParameter(p){
   const parts=p.split('.');
@@ -311,6 +315,46 @@ function parameterSelect(value='',leftSide=false){
   if(value && !values.includes(value)){const o=document.createElement('option');o.value=value;o.textContent=value+' (missing)';o.selected=true;s.prepend(o);}
   return s;
 }
+function normalizeExpression(expr){
+  if(typeof expr==='string')return {source:expr,transforms:[]};
+  if(expr&&typeof expr==='object'&&expr.source)return {source:expr.source,transforms:expr.transforms||[]};
+  return {source:ruleParameters.find(v=>v.startsWith('current.'))||'',transforms:[]};
+}
+function addTransformChip(holder,transform={op:'count'}){
+  const chip=el('div',null,'transform-chip');
+  const select=document.createElement('select');select.className='transform-op';
+  for(const entry of TRANSFORMS){
+    const o=document.createElement('option');o.value=entry[0];o.textContent=entry[1];if(entry[0]===transform.op)o.selected=true;select.append(o);
+  }
+  const arg=document.createElement('input');arg.className='transform-arg';arg.placeholder='Key / index';arg.value=transform.arg??'';
+  const remove=el('button','×');remove.type='button';remove.className='transform-remove';remove.onclick=()=>chip.remove();
+  const update=()=>{
+    const spec=TRANSFORMS.find(x=>x[0]===select.value);
+    arg.hidden=!(spec&&spec[2]);
+  };
+  select.onchange=update;update();chip.append(el('span','→','muted'),select,arg,remove);holder.append(chip);
+}
+function expressionEditor(expr){
+  const normalized=normalizeExpression(expr);
+  const box=el('div',null,'expression-editor');
+  const source=parameterSelect(normalized.source,true);source.className='expression-source';box.append(source);
+  const transforms=el('div',null,'transform-list');box.append(transforms);
+  for(const t of normalized.transforms)addTransformChip(transforms,t);
+  const add=el('button','Transform');add.type='button';add.className='transform-add';add.onclick=()=>addTransformChip(transforms,{op:'count'});
+  box.append(add);return box;
+}
+function expressionFromEditor(box){
+  const source=box.querySelector('.expression-source').value;
+  const transforms=[...box.querySelectorAll('.transform-chip')].map(chip=>{
+    const op=chip.querySelector('.transform-op').value;
+    const result={op:op};
+    const arg=chip.querySelector('.transform-arg');
+    if(!arg.hidden)result.arg=parseLooseJson(arg.value,arg.value);
+    return result;
+  });
+  return transforms.length?{source:source,transforms:transforms}:source;
+}
+
 function operatorSelect(value='eq'){
   const s=document.createElement('select');
   for(const [group,ops] of OPERATOR_GROUPS){
@@ -348,7 +392,7 @@ function renderConditionRight(row,node={}){
 }
 function addCondition(group,node={}){
   const row=el('div',null,'condition-row');row.dataset.kind='condition';
-  const left=parameterSelect(node.left||ruleParameters.find(v=>v.startsWith('current.'))||'',true);left.className='condition-left';
+  const left=expressionEditor(node.left||ruleParameters.find(v=>v.startsWith('current.'))||'');left.classList.add('condition-left-expression');
   const op=operatorSelect(node.operator||'eq');op.className='condition-operator';
   const right=el('div',null,'condition-right');
   const remove=el('button','Remove');remove.type='button';remove.className='danger';remove.onclick=()=>row.remove();
@@ -378,7 +422,7 @@ function addConditionGroup(parent,node={kind:'group',logic:'all',items:[]},root=
   return g;
 }
 function conditionFromRow(row){
-  const left=row.querySelector('.condition-left').value,operator=row.querySelector('.condition-operator').value;
+  const left=expressionFromEditor(row.querySelector('.condition-left-expression')),operator=row.querySelector('.condition-operator').value;
   const out={kind:'condition',left:left,operator:operator};
   if(NO_RIGHT.has(operator))return out;
   if(RANGE_RIGHT.has(operator)){
