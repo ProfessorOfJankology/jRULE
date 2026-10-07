@@ -552,17 +552,19 @@ function renderActionArguments(row,item={}){
     const box=el('div',null,'action-arg');box.dataset.name=name;
     const label=el('label',name);
     const mode=document.createElement('select');mode.className='arg-mode';
-    for(const pair of [['literal','value'],['variable','parameter']]){const o=document.createElement('option');o.value=pair[0];o.textContent=pair[1];mode.append(o);}
+    for(const pair of [['literal','value'],['parameter','parameter']]){const o=document.createElement('option');o.value=pair[0];o.textContent=pair[1];mode.append(o);}
     const raw=existing[name];
-    const match=typeof raw==='string'?raw.match(/^\\{\\{\\s*([A-Za-z0-9_.-]+)\\s*\\}\\}$/):null;
-    mode.value=match?'variable':'literal';
+    const legacy=typeof raw==='string'?raw.match(/^\\{\\{\\s*([A-Za-z0-9_.-]+)\\s*\\}\\}$/):null;
+    const structured=raw&&typeof raw==='object'&&raw.kind==='parameter'&&raw.expression;
+    mode.value=(legacy||structured)?'parameter':'literal';
     const valueHolder=el('span',null,'arg-value-holder');
     const draw=()=>{
       valueHolder.replaceChildren();
-      if(mode.value==='variable'){
-        const ps=parameterReferenceEditor(match?match[1]:'');ps.classList.add('arg-variable');valueHolder.append(ps);
+      if(mode.value==='parameter'){
+        const expr=structured?raw.expression:(legacy?legacy[1]:'');
+        const editor=expressionEditor(expr);editor.classList.add('arg-expression');valueHolder.append(editor);
       }else{
-        const input=literalInput(match?'':raw,'arg-literal');input.placeholder='Value';valueHolder.append(input);
+        const input=literalInput((legacy||structured)?'':raw,'arg-literal');input.placeholder='Value';valueHolder.append(input);
       }
     };
     mode.onchange=draw;draw();label.append(mode,valueHolder);box.append(label);holder.append(box);
@@ -587,7 +589,9 @@ function actionsFromBuilder(){
     const method=row.querySelector('.action-method').value,argumentsObj={};
     for(const box of row.querySelectorAll('.action-arg')){
       const name=box.dataset.name,mode=box.querySelector('.arg-mode').value;
-      argumentsObj[name]=mode==='variable'?'{{ '+parameterReferenceValue(box.querySelector('.arg-variable'))+' }}':parseLooseJson(box.querySelector('.arg-literal').value,'');
+      argumentsObj[name]=mode==='parameter'
+        ? {kind:'parameter',expression:expressionFromEditor(box.querySelector('.arg-expression'))}
+        : parseLooseJson(box.querySelector('.arg-literal').value,'');
     }
     return {method:method,arguments:argumentsObj};
   });
