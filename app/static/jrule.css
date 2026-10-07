@@ -10,3 +10,5 @@
 .parameter-reference{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;align-items:center}.parameter-reference>.parameter-source,.parameter-reference>.parameter-state{margin:0}.parameter-reference>.parameter-state{width:auto;min-width:105px}.expression-source{width:100%}.right-value-holder .parameter-reference,.arg-value-holder .parameter-reference{width:100%}
 
 .parameter-reference{grid-template-columns:minmax(0,1fr) minmax(180px,1fr) auto}.parameter-reference>.parameter-custom{margin:0}.field-table td:last-child{display:flex;gap:6px;flex-wrap:wrap}.field-table td:last-child button{flex:1 1 80px}
+
+.log-controls{display:flex;gap:12px;align-items:end;flex-wrap:wrap;margin:0 0 12px}.log-controls label{min-width:170px}.log-controls select{margin-bottom:0}.log-table{table-layout:fixed}.log-table th:nth-child(1){width:190px}.log-table th:nth-child(2){width:75px}.log-table th:nth-child(3){width:170px}.log-table td{white-space:pre-wrap;overflow-wrap:anywhere}.log-error td{background:rgba(130,36,36,.16)}.log-warning td{background:rgba(140,100,30,.12)}
