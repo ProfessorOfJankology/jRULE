@@ -48,15 +48,26 @@ async def objects():return await state.pool()
 @app.get('/api/global-variables')
 async def variables():
     data=await state.pool()
-    values=[f'{t}.{name}.{prop}' for name,obj in data.items() for prop in obj['properties'] for t in ('current','previous')]
-    values += [f'meta.{name}.{prop}.{t}' for name,obj in data.items() for prop in obj['properties'] for t in ('last_polled','last_changed')]
+    values={f'{t}.{name}.{prop}' for name,obj in data.items() for prop in obj['properties'] for t in ('current','previous')}
+    values.update(f'meta.{name}.{prop}.{t}' for name,obj in data.items() for prop in obj['properties'] for t in ('last_polled','last_changed'))
     for name,obj in data.items():
         if obj.get('source_meta'):
-            values += [
+            values.update({
                 f'meta.{name}.checks_since_poll',
                 f'meta.{name}.poll_sequence',
                 f'meta.{name}.last_poll',
-            ]
+            })
+    # Stable fields learned from successful source polls are directly usable
+    # by get_path(), even when they were never promoted to top-level properties.
+    async with state.connection() as conn:
+        rows=await (await conn.execute('SELECT name,discovered_json FROM http_sources')).fetchall()
+    for row in rows:
+        for field in json.loads(row['discovered_json'] or '[]'):
+            path=str(field.get('path') or '')
+            if not path or any(part.isdigit() for part in path.split('.')):
+                continue
+            values.add(f"current.{row['name']}.{path}")
+            values.add(f"previous.{row['name']}.{path}")
     return sorted(values)
 @app.get('/api/modules/sources')
 async def source_catalog():return {'japi.get':{'kind':'poll','object_types':['japi'],'supports_mapping':True,'supports_query':True,'supports_derived_fields':True}}
@@ -138,6 +149,20 @@ async def source_fields(name:str):
         row=await (await conn.execute('SELECT discovered_json,mapping_json FROM http_sources WHERE name=?',(name,))).fetchone()
     if not row:raise HTTPException(404,'Unknown source')
     return {'fields':json.loads(row['discovered_json'] or '[]'),'mapping':json.loads(row['mapping_json'] or '{}')}
+
+@app.delete('/api/sources/{name}/fields')
+async def forget_source_field(name:str,path:str):
+    if not path.strip():
+        raise HTTPException(400,'Field path is required')
+    async with state.connection() as conn:
+        row=await (await conn.execute('SELECT discovered_json FROM http_sources WHERE name=?',(name,))).fetchone()
+        if not row:raise HTTPException(404,'Unknown source')
+        fields=json.loads(row['discovered_json'] or '[]')
+        kept=[f for f in fields if f.get('path')!=path and not str(f.get('path','')).startswith(path+'.')]
+        if len(kept)==len(fields):raise HTTPException(404,'Unknown discovered field')
+        await conn.execute('UPDATE http_sources SET discovered_json=? WHERE name=?',(json.dumps(kept),name))
+        await conn.commit()
+    return {'ok':True,'forgotten':path}
 
 @app.post('/api/sources/{name}/derived-fields')
 async def add_derived_field(name:str,payload:DerivedFieldIn):
