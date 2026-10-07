@@ -56,6 +56,79 @@ def get_path(root: dict[str, Any] | None, path: str) -> Any:
     return cur
 
 
+def apply_transform(value: Any, transform: dict[str, Any]) -> Any:
+    """Apply a small, deterministic value transform used by visual rules."""
+    op=str(transform.get("op","")).lower()
+    arg=transform.get("arg")
+    if op=="count":
+        return len(value) if isinstance(value,(list,dict,str,tuple)) else 0
+    if op=="first":
+        if isinstance(value,(list,tuple,str)) and value:return value[0]
+        return None
+    if op=="last":
+        if isinstance(value,(list,tuple,str)) and value:return value[-1]
+        return None
+    if op=="key":
+        return value.get(str(arg)) if isinstance(value,dict) else None
+    if op=="index":
+        try:return value[int(arg)] if isinstance(value,(list,tuple,str)) else None
+        except (ValueError,TypeError,IndexError):return None
+    if op=="as_number":
+        try:
+            number=float(value)
+            return int(number) if number.is_integer() else number
+        except (ValueError,TypeError):return None
+    if op=="as_string":
+        if value is None:return None
+        if isinstance(value,(dict,list,tuple)):return json.dumps(value,separators=(",",":"),default=str)
+        return str(value)
+    if op=="as_boolean":
+        if isinstance(value,bool):return value
+        if isinstance(value,(int,float)):return value!=0
+        if isinstance(value,str):
+            lowered=value.strip().lower()
+            if lowered in {"true","1","yes","on"}:return True
+            if lowered in {"false","0","no","off",""}:return False
+        return None
+    if op=="as_date":
+        return str(value)[:10] if value is not None else None
+    if op=="as_time":
+        if value is None:return None
+        text=str(value)
+        return text[11:19] if "T" in text and len(text)>=19 else text[:8]
+    if op=="lowercase":
+        return str(value).lower() if value is not None else None
+    if op=="uppercase":
+        return str(value).upper() if value is not None else None
+    raise ValueError(f"Unknown transform: {op}")
+
+
+def resolve_expression(expr: Any, ctx: dict[str, Any]) -> Any:
+    """Resolve either a legacy dotted path or a structured value expression."""
+    if isinstance(expr,str):
+        return get_path(ctx,expr)
+    if not isinstance(expr,dict):
+        return expr
+    value=get_path(ctx,str(expr.get("source","")))
+    for transform in expr.get("transforms") or []:
+        value=apply_transform(value,transform)
+    return value
+
+
+def previous_expression(expr: Any) -> Any:
+    """Return the matching previous-state expression for current-state input."""
+    if isinstance(expr,str):
+        return "previous."+expr[8:] if expr.startswith("current.") else expr
+    if isinstance(expr,dict):
+        result=dict(expr)
+        source=str(result.get("source",""))
+        if source.startswith("current."):
+            result["source"]="previous."+source[8:]
+        result["transforms"]=[dict(t) for t in (expr.get("transforms") or [])]
+        return result
+    return expr
+
+
 def parse_scalar(value: Any) -> Any:
     if not isinstance(value, str):
         return value
@@ -197,8 +270,8 @@ def compare(op: str, left: Any, right: Any = None, previous: Any = None) -> bool
 
 
 def resolve_operand(condition: dict[str, Any], ctx: dict[str, Any]) -> Any:
-    if condition.get("right_type") == "variable":
-        return get_path(ctx, str(condition.get("right", "")))
+    if condition.get("right_type") in {"variable","expression"}:
+        return resolve_expression(condition.get("right"),ctx)
     return parse_scalar(condition.get("right"))
 
 
@@ -214,15 +287,9 @@ def evaluate_condition(node: dict[str, Any], ctx: dict[str, Any]) -> bool:
         results = [evaluate_condition(item, ctx) for item in items]
         return any(results) if logic == "any" else all(results)
 
-    path = str(node.get("left", ""))
-    left = get_path(ctx, path)
-    previous_path = path
-    if path.startswith("current."):
-        previous_path = "previous." + path[len("current."):]
-    previous = get_path(ctx, previous_path) if previous_path.startswith("previous.") else None
-    if path.startswith("current."):
-        previous = get_path(ctx, "previous." + path[8:])
-
-    right = resolve_operand(node, ctx)
-    return compare(str(node.get("operator", "eq")), left, right, previous)
+    left_expr=node.get("left","")
+    left=resolve_expression(left_expr,ctx)
+    previous=resolve_expression(previous_expression(left_expr),ctx)
+    right=resolve_operand(node,ctx)
+    return compare(str(node.get("operator","eq")),left,right,previous)
 
