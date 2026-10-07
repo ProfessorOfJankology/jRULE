@@ -17,15 +17,17 @@ def validate_name(name):
     return name
 
 def validate_endpoint(endpoint):
-    """Only jAPI-relative endpoints. Reject URLs, fragments, query tricks and traversal."""
+    """Allow jAPI-relative /v1 routes with an optional query string."""
     from urllib.parse import unquote
-    if (not isinstance(endpoint,str) or not endpoint.startswith('/v1/') or
-            len(endpoint)>512 or '?' in endpoint or '#' in endpoint or
-            any(ch.isspace() for ch in endpoint) or '\\' in endpoint or
-            '//' in endpoint or any(part in ('.','..') for part in unquote(endpoint).split('/')) or
-            '%' in endpoint):
-        raise ValueError('Endpoint must be a plain jAPI route starting /v1/ (no URL, query or traversal)')
-    if not re.fullmatch(r'/v1/[A-Za-z0-9_./-]+', endpoint):
+    if not isinstance(endpoint,str) or len(endpoint)>1024 or any(ch.isspace() for ch in endpoint) or '\\' in endpoint:
+        raise ValueError('Endpoint must be a relative jAPI route')
+    parts=urlsplit(endpoint)
+    if parts.scheme or parts.netloc or parts.fragment or not parts.path.startswith('/v1/'):
+        raise ValueError('Endpoint must be a relative jAPI route starting /v1/')
+    decoded=unquote(parts.path)
+    if '//' in parts.path or any(part in ('.','..') for part in decoded.split('/')):
+        raise ValueError('Endpoint traversal is not allowed')
+    if not re.fullmatch(r'/v1/[A-Za-z0-9_./-]+', parts.path):
         raise ValueError('Invalid jAPI endpoint path')
     return endpoint
 
@@ -63,9 +65,68 @@ def json_path(data,path):
         else:raise KeyError(path)
     return current
 
+_MISSING=object()
+
+def _mapping_value(payload,spec):
+    """Resolve one derived property mapping.
+
+    Backward compatible string specs are plain JSON paths.
+    Object specs support: path, op (value|exists|contains|count|first|equals),
+    value (for contains/equals), and default.
+    """
+    if isinstance(spec,str):
+        return json_path(payload,spec)
+    if not isinstance(spec,dict):
+        raise ValueError('Property mapping must be a JSON path string or mapping object')
+    path=spec.get('path','')
+    op=spec.get('op','value')
+    default=spec.get('default',None)
+    try:
+        raw=json_path(payload,path)
+        found=True
+    except (KeyError,IndexError,TypeError):
+        raw=_MISSING
+        found=False
+    if op=='exists':
+        return found
+    if not found:
+        return default
+    if op=='value':
+        return raw
+    if op=='first':
+        return raw[0] if isinstance(raw,list) and raw else default
+    if op=='count':
+        return len(raw) if isinstance(raw,(list,dict,str)) else default
+    if op=='contains':
+        try:return spec.get('value') in raw
+        except TypeError:return False
+    if op=='equals':
+        return raw==spec.get('value')
+    raise ValueError(f'Unsupported mapping operation: {op}')
+
+def validate_mapping(mapping):
+    if not isinstance(mapping,dict):
+        raise ValueError('Property mapping must be a JSON object')
+    for alias,spec in mapping.items():
+        validate_name(alias)
+        if isinstance(spec,str):
+            if len(spec)>255:raise ValueError('JSON property path is too long')
+            continue
+        if not isinstance(spec,dict):
+            raise ValueError(f'Invalid mapping for {alias}')
+        if set(spec)-{'path','op','value','default'}:
+            raise ValueError(f'Unsupported mapping option for {alias}')
+        path=spec.get('path','')
+        if not isinstance(path,str) or len(path)>255:
+            raise ValueError(f'Invalid JSON path for {alias}')
+        if spec.get('op','value') not in {'value','exists','contains','count','first','equals'}:
+            raise ValueError(f'Invalid mapping operation for {alias}')
+    return mapping
+
 def select_properties(payload,mapping):
     if mapping:
-        return {validate_name(alias):json_path(payload,path) for alias,path in mapping.items()}
+        validate_mapping(mapping)
+        return {validate_name(alias):_mapping_value(payload,spec) for alias,spec in mapping.items()}
     if not isinstance(payload,dict):raise ValueError('Source JSON must be an object, or supply a property mapping')
     return {validate_name(k):v for k,v in payload.items()}
 
