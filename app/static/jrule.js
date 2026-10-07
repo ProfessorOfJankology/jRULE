@@ -14,23 +14,82 @@ async function api(url,method='GET',body){
 }
 const j=v=>JSON.stringify(v);
 
-function objCard(name,info){
-  const c=el('div',null,'card');
-  c.append(el('h3',name),el('p',`${info.module} / ${info.type}`,'muted'));
-  const table=el('table'),head=el('tr');
-  for(const title of ['Property','Current','Last','Last changed'])head.append(el('th',title));
+function shortValue(v){
+  const s=j(v);
+  return s===undefined?'':(s.length>140?s.slice(0,137)+'…':s);
+}
+function suggestedProperty(path){
+  const parts=path.split('.').slice(-2);
+  let value=parts.join('_').replace(/[^A-Za-z0-9_-]/g,'_');
+  if(!/^[A-Za-z]/.test(value))value='field_'+value;
+  return value.slice(0,64);
+}
+function openDerived(source,field){
+  const form=$('#derived-form');
+  form.reset();
+  form.elements.source.value=source;
+  form.elements.source_display.value=source;
+  form.elements.name.value=suggestedProperty(field.path);
+  form.elements.path.value=field.path;
+  form.elements.op.value='value';
+  form.elements.default.value='null';
+  $('#derived-edit').hidden=false;
+  $('#derived-edit').scrollIntoView({behavior:'smooth'});
+}
+async function objCard(name,info){
+  const c=el('div',null,'panel source-state');
+  const title=el('div',null,'bar');
+  const left=el('div');
+  left.append(el('h3',name),el('p',`${info.module} / ${info.type}`,'muted'));
+  title.append(left);
+  c.append(title);
+
+  const table=el('table',null,'parameter-table'),head=el('tr');
+  for(const heading of ['Rule parameter','Current','Previous','Last changed'])head.append(el('th',heading));
   table.append(head);
-  for(const [name,p] of Object.entries(info.properties)){
+  for(const [prop,p] of Object.entries(info.properties)){
     const tr=el('tr');
-    for(const v of [name,j(p.current),j(p.last),p.last_changed||''])tr.append(el('td',v));
+    const param=el('code',`current.${name}.${prop}`);
+    const td=el('td');td.append(param);tr.append(td);
+    for(const v of [shortValue(p.current),shortValue(p.last),p.last_changed||''])tr.append(el('td',v));
     table.append(tr);
   }
+  if(!Object.keys(info.properties).length){
+    const tr=el('tr'),td=el('td','No rule parameters yet. Poll the source first.','hint');td.colSpan=4;tr.append(td);table.append(tr);
+  }
   c.append(table);
+
+  if(info.module==='japi.get'){
+    try{
+      const discovered=await api('/api/sources/'+encodeURIComponent(name)+'/fields');
+      const details=document.createElement('details');
+      const summary=document.createElement('summary');
+      summary.textContent=`Available source fields (${discovered.fields.length})`;
+      details.append(summary);
+      const ftable=el('table',null,'field-table'),fh=el('tr');
+      for(const heading of ['Observed path','Sample value','Type',''])fh.append(el('th',heading));
+      ftable.append(fh);
+      for(const field of discovered.fields){
+        const tr=el('tr'),pathTd=el('td'),code=el('code',field.path);
+        pathTd.append(code);tr.append(pathTd,el('td',shortValue(field.value)),el('td',field.type));
+        const actionTd=el('td'),button=el('button','Add property');
+        button.type='button';button.onclick=()=>openDerived(name,field);actionTd.append(button);tr.append(actionTd);
+        ftable.append(tr);
+      }
+      if(!discovered.fields.length){
+        const tr=el('tr'),td=el('td','No observed fields yet. Poll this source first.','hint');td.colSpan=4;tr.append(td);ftable.append(tr);
+      }
+      details.append(ftable);c.append(details);
+    }catch(e){
+      c.append(el('p','Could not load discovered fields: '+e.message,'hint'));
+    }
+  }
   return c;
 }
 async function pool(){
   const root=$('#objects');root.replaceChildren();
-  for(const [name,info] of Object.entries(await api('/api/objects')))root.append(objCard(name,info));
+  const data=await api('/api/objects');
+  for(const [name,info] of Object.entries(data))root.append(await objCard(name,info));
   if(!root.children.length)root.append(el('p','No properties yet. Configure a jAPI source and poll it.','hint'));
 }
 
@@ -146,7 +205,6 @@ function openForm(type,obj){
     else if(obj && Object.hasOwn(obj,input.name))input.value=obj[input.name];
   }
   form.elements.name.readOnly=!!obj;
-  if(type==='source')renderMapping(obj?.mapping||{});
   $('#'+type+'-edit').hidden=false;
   $('#'+type+'-edit').scrollIntoView({behavior:'smooth'});
 }
@@ -185,6 +243,25 @@ async function saveVariable(e){
   }catch(err){notice(err.message)}
 }
 
+async function saveDerived(e){
+  e.preventDefault();
+  const form=e.target;
+  const source=form.elements.source.value;
+  const payload={
+    name:form.elements.name.value.trim(),
+    path:form.elements.path.value,
+    op:form.elements.op.value,
+    value:parseLooseJson(form.elements.value.value,null),
+    default:parseLooseJson(form.elements.default.value,null)
+  };
+  try{
+    const result=await api('/api/sources/'+encodeURIComponent(source)+'/derived-fields','POST',payload);
+    $('#derived-edit').hidden=true;
+    await Promise.all([pool(),refreshSources()]);
+    notice(result.poll_error?'Property saved; poll failed: '+result.poll_error:'Derived property added');
+  }catch(err){notice(err.message)}
+}
+
 function openRule(rule){
   edit.rule=rule?.id||null;$('#rule-edit').hidden=false;
   $('#rule-name').value=rule?.name||'';$('#rule-priority').value=rule?.priority??100;
@@ -214,14 +291,15 @@ $('#new-source').onclick=()=>openForm('source');
 $('#new-action').onclick=()=>openForm('action');
 $('#new-rule').onclick=()=>openRule();
 $('#new-variable').onclick=()=>openVariable();
-$('#add-mapping').onclick=()=>{addMappingRow();syncMappingText();};
 $('#cancel-source').onclick=()=>$('#source-edit').hidden=true;
 $('#cancel-action').onclick=()=>$('#action-edit').hidden=true;
 $('#cancel-rule').onclick=()=>$('#rule-edit').hidden=true;
 $('#cancel-variable').onclick=()=>$('#variable-edit').hidden=true;
+$('#cancel-derived').onclick=()=>$('#derived-edit').hidden=true;
 $('#source-form').onsubmit=e=>saveForm('source',e);
 $('#action-form').onsubmit=e=>saveForm('action',e);
 $('#variable-form').onsubmit=saveVariable;
+$('#derived-form').onsubmit=saveDerived;
 $('#rule-form').onsubmit=saveRule;
 $('#settings-form').onsubmit=async e=>{
   e.preventDefault();
