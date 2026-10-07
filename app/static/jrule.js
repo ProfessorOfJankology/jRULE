@@ -80,7 +80,19 @@ async function objCard(name,info){
         const status=el('span',field.present?'Present now':'Not in latest poll',field.present?'tag field-present':'tag field-absent');
         const statusTd=el('td');statusTd.append(status);tr.append(statusTd,el('td',field.last_seen||''));
         const actionTd=el('td'),button=el('button','Add property');
-        button.type='button';button.onclick=()=>openDerived(name,field);actionTd.append(button);tr.append(actionTd);
+        button.type='button';button.onclick=()=>openDerived(name,field);actionTd.append(button);
+        if(!field.present){
+          const forget=el('button','Forget');forget.type='button';forget.className='danger';
+          forget.onclick=async()=>{
+            if(!confirm('Forget historical field '+field.path+'?'))return;
+            try{
+              await api('/api/sources/'+encodeURIComponent(name)+'/fields?path='+encodeURIComponent(field.path),'DELETE');
+              notice('Forgot '+field.path);await pool();await refreshRules();
+            }catch(e){notice(e.message)}
+          };
+          actionTd.append(forget);
+        }
+        tr.append(actionTd);
         ftable.append(tr);
       }
       if(!discovered.fields.length){
@@ -316,25 +328,49 @@ function parameterSelect(value=''){
     for(const p of items){const o=document.createElement('option');o.value=p;o.textContent=prettyParameter(p);if(p===canonicalValue)o.selected=true;og.append(o);}
     s.append(og);
   }
-  if(canonicalValue && !values.includes(canonicalValue)){const o=document.createElement('option');o.value=canonicalValue;o.textContent=canonicalValue+' (missing)';o.selected=true;s.prepend(o);}
+  const custom=document.createElement('option');custom.value='__custom__';custom.textContent='Custom path…';s.append(custom);
+  if(canonicalValue && !values.includes(canonicalValue)){
+    custom.selected=true;
+    s.dataset.customValue=canonicalValue;
+  }
   return s;
 }
 function parameterReferenceEditor(value=''){
   const box=el('div',null,'parameter-reference');
   const source=parameterSelect(value);source.className='parameter-source';
+  const custom=document.createElement('input');custom.className='parameter-custom';
+  custom.placeholder='Presence.workstation_users.ESMC-DAN';
+  let initial=value||'';
+  if(initial.startsWith('current.'))initial=initial.slice(8);
+  else if(initial.startsWith('previous.'))initial=initial.slice(9);
+  else if(initial.startsWith('meta.'))initial=value;
+  custom.value=source.value==='__custom__'?(source.dataset.customValue?canonicalParameter(source.dataset.customValue).replace(/^current\./,''):initial):'';
   const state=document.createElement('select');state.className='parameter-state';
   for(const pair of [['current','Current'],['previous','Previous']]){
     const o=document.createElement('option');o.value=pair[0];o.textContent=pair[1];state.append(o);
   }
   state.value=value.startsWith('previous.')?'previous':'current';
-  const update=()=>{state.hidden=!source.value.startsWith('current.');};
-  source.onchange=update;update();box.append(source,state);return box;
+  const update=()=>{
+    const isCustom=source.value==='__custom__';
+    custom.hidden=!isCustom;
+    const raw=isCustom?custom.value.trim():source.value;
+    state.hidden=raw.startsWith('meta.');
+  };
+  source.onchange=update;custom.oninput=update;update();box.append(source,custom,state);return box;
 }
 function parameterReferenceValue(box){
-  let source=box.querySelector('.parameter-source').value;
+  const source=box.querySelector('.parameter-source');
+  const custom=box.querySelector('.parameter-custom');
   const state=box.querySelector('.parameter-state');
-  if(source.startsWith('current.') && state && state.value==='previous')source='previous.'+source.slice(8);
-  return source;
+  if(source.value!=='__custom__'){
+    let value=source.value;
+    if(value.startsWith('current.') && state && state.value==='previous')value='previous.'+value.slice(8);
+    return value;
+  }
+  let raw=custom.value.trim();
+  if(!raw)return '';
+  if(raw.startsWith('current.')||raw.startsWith('previous.')||raw.startsWith('meta.'))return raw;
+  return (state&&state.value==='previous'?'previous.':'current.')+raw;
 }
 function normalizeExpression(expr){
   if(typeof expr==='string')return {source:expr,transforms:[]};
