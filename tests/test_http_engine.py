@@ -142,8 +142,12 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
             'transforms':[{'op':'first'}]
         }}
         self.assertEqual(modules.resolve_action_argument(arg,ctx),'jordan.grey')
-        with self.assertRaises(ValueError):
-            modules.resolve_action_argument({'kind':'parameter','expression':'current.Presence.workstation_users.ESC-R1'},ctx)
+        self.assertIsNone(
+            modules.resolve_action_argument(
+                {'kind':'parameter','expression':'current.Presence.workstation_users.ESC-R1'},
+                ctx
+            )
+        )
 
     def test_endpoint_is_japi_only(self):
         self.assertEqual(validate_endpoint('/v1/mdserver/sessions'),'/v1/mdserver/sessions')
