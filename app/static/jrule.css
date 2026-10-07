@@ -6,3 +6,5 @@
 .field-present{background:#214f3b}.field-absent{background:#563f2b;color:#f0cda9}
 
 .expression-editor{display:flex;flex-direction:column;gap:6px}.expression-editor>.expression-source{margin:0}.transform-list{display:flex;flex-direction:column;gap:5px}.transform-chip{display:grid;grid-template-columns:auto minmax(130px,1fr) minmax(90px,1fr) auto;gap:6px;align-items:center;background:#10212b;border:1px solid #34505f;border-radius:6px;padding:5px}.transform-chip select,.transform-chip input{margin:0}.transform-add{align-self:flex-start;padding:5px 9px;font-size:12px}.transform-remove{padding:4px 8px}.condition-left-expression{min-width:0}
+
+.parameter-reference{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;align-items:center}.parameter-reference>.parameter-source,.parameter-reference>.parameter-state{margin:0}.parameter-reference>.parameter-state{width:auto;min-width:105px}.expression-source{width:100%}.right-value-holder .parameter-reference,.arg-value-holder .parameter-reference{width:100%}
