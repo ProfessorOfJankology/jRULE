@@ -229,20 +229,28 @@ function openForm(type,obj){
 }
 async function saveForm(type,e){
   e.preventDefault();
-  const data={};
-  for(const field of e.target.elements){
-    if(!field.name)continue;
-    if(field.name==='mapping'||field.name==='body')data[field.name]=JSON.parse(field.value);
-    else if(field.type==='checkbox')data[field.name]=field.checked;
-    else if(field.type==='number')data[field.name]=Number(field.value);
-    else data[field.name]=field.value;
-  }
   try{
+    const data={};
+    for(const field of e.target.elements){
+      if(!field.name)continue;
+      if(field.name==='mapping'||field.name==='body'){
+        const raw=field.value.trim();
+        try{data[field.name]=raw?JSON.parse(raw):{};}
+        catch(parseError){
+          const label=field.name==='body'?'POST body':'Property mapping';
+          throw new Error(label+' must be valid JSON: '+parseError.message);
+        }
+      }else if(field.type==='checkbox')data[field.name]=field.checked;
+      else if(field.type==='number')data[field.name]=Number(field.value);
+      else data[field.name]=field.value;
+    }
     await api('/api/'+type+'s'+(edit[type]?'/'+encodeURIComponent(edit[type]):''),edit[type]?'PUT':'POST',data);
     $('#'+type+'-edit').hidden=true;
     await(type==='source'?refreshSources():refreshActions());
     notice('Saved '+type);
-  }catch(err){notice(err.message)}
+  }catch(err){
+    notice(err?.message||String(err));
+  }
 }
 
 function openVariable(v){
