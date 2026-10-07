@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from app import db, state, modules
-from app.http_services import json_path, select_properties, discover_fields, validate_endpoint, render_body
+from app.http_services import json_path, select_properties, discover_fields, merge_discovered_fields, validate_endpoint, render_body
 from app.rules import evaluate_condition
 
 class EngineTests(unittest.IsolatedAsyncioTestCase):
@@ -61,15 +61,28 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
             'current_user':{'path':'workstation_users.ESC-R1.0','op':'value','default':None},
             'present':{'path':'connected_workstations','op':'contains','value':'ESC-R1','default':False},
         }
-        self.assertEqual(select_properties(presence,mapping),{'current_user':'JGRA','present':True})
+        selected=select_properties(presence,mapping)
+        self.assertEqual(selected['current_user'],'JGRA')
+        self.assertTrue(selected['present'])
         gone={'connected_workstations':[],'workstation_users':{}}
-        self.assertEqual(select_properties(gone,mapping),{'current_user':None,'present':False})
+        selected=select_properties(gone,mapping)
+        self.assertIsNone(selected['current_user'])
+        self.assertFalse(selected['present'])
 
     def test_discovered_fields(self):
         fields=discover_fields({'workstation_users':{'ESC-R1':['JGRA']},'count':1})
         paths={f['path'] for f in fields}
         self.assertIn('workstation_users.ESC-R1.0',paths)
         self.assertIn('count',paths)
+
+    def test_discovered_fields_are_cumulative(self):
+        first=merge_discovered_fields([],discover_fields({'workstation_users':{'ESC-R1':['JGRA']}}),'2026-10-07T08:00:00+00:00')
+        second=merge_discovered_fields(first,discover_fields({'workstation_users':{}}),'2026-10-07T08:01:00+00:00')
+        by_path={f['path']:f for f in second}
+        self.assertIn('workstation_users.ESC-R1.0',by_path)
+        self.assertFalse(by_path['workstation_users.ESC-R1.0']['present'])
+        self.assertEqual(by_path['workstation_users.ESC-R1.0']['value'],'JGRA')
+        self.assertEqual(by_path['workstation_users.ESC-R1.0']['last_seen'],'2026-10-07T08:00:00+00:00')
 
     def test_recursive_body_template(self):
         payload={'username':'{{ current.presence.user }}','value':'{{ args.message }}','other':[1,True]}
