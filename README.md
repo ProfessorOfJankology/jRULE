@@ -1,4 +1,4 @@
-# jRULE v0.4: jAPI rules engine
+# jRULE v0.6: jAPI rules engine
 
 A small self-hosted rules engine that observes **named jAPI GET sources** and runs **configured jAPI POST actions**. It is independent of Tapo Rules.
 
@@ -63,6 +63,23 @@ Example presence source:
 ```
 
 When ESC-R1 disappears from the response, `current_user` advances to `null` and `present` advances to `false`, so rules can detect logout/disconnect using current/previous values.
+
+## Rule value expressions
+
+Rule conditions can transform a parameter before comparison. The visual rule builder supports collection and conversion steps such as `count`, `first`, `last`, dictionary `key`, list `index`, `as number`, `as text`, `as true/false`, `as date`, `as time`, lowercase and uppercase. The common comparison operators then work on the transformed value.
+
+Lists are treated as collection values during source-field discovery. Numeric list positions such as `.0`, `.1` and `.2` are not persisted as discovered fields because their meaning changes when list ordering changes. Stable dictionary keys may still be discovered. Legacy rules and derived mappings that explicitly use numeric JSON paths continue to work.
+
+Structured expressions are stored in rule JSON as, for example:
+
+```json
+{
+  "source": "current.Presence.connected_workstations",
+  "transforms": [
+    { "op": "count" }
+  ]
+}
+```
 
 ## Custom stored variables
 
