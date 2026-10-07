@@ -44,6 +44,8 @@ async def _evaluate_once_unlocked() -> list[dict]:
                                        (db.utc_now(),int(written),db.utc_now(),rule["id"]))
                     await conn.commit()
                 results.append({"id":rule["id"],"matched":matched,"skipped_cooldown":skipped,"executed":written})
+                if written:
+                    await db.log_event(level="info",event_type="rule_executed",message=f"{rule['name']}: actions executed")
                 if matched and not skipped and rule["stop_processing"]:
                     break
             except Exception as exc:
