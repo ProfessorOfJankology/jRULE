@@ -148,10 +148,8 @@ def discover_fields(payload,limit=500):
             for key,item in value.items():
                 child=f'{path}.{key}' if path else str(key)
                 walk(item,child)
-        elif isinstance(value,list):
-            for idx,item in enumerate(value[:50]):
-                child=f'{path}.{idx}' if path else str(idx)
-                walk(item,child)
+        # Lists are atomic collection values for discovery. Numeric list
+        # positions are not stable field identities, so do not persist .0/.1/etc.
     walk(payload,'')
     return fields
 
@@ -160,7 +158,7 @@ def merge_discovered_fields(previous,current,seen_at,limit=1000):
     merged={}
     for field in previous or []:
         path=field.get('path')
-        if not path:continue
+        if not path or any(part.isdigit() for part in path.split('.')):continue
         item=dict(field)
         item['present']=False
         item.setdefault('first_seen',item.get('last_seen'))
