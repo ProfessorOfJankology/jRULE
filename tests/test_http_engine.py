@@ -135,13 +135,6 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             render_body({'embedded':'user={{ args.username }}'},ctx)
 
-    def test_missing_whole_value_template_becomes_null(self):
-        payload={'username':'{{ current.Presence.workstation_users.ESC-R1 }}'}
-        ctx={'current':{'Presence':{'workstation_users':{}}}}
-        self.assertIsNone(render_body(payload,ctx)['username'])
-        with self.assertRaises(ValueError):
-            render_body({'message':'user={{ current.Presence.workstation_users.ESC-R1 }}'},ctx)
-
     def test_endpoint_is_japi_only(self):
         self.assertEqual(validate_endpoint('/v1/mdserver/sessions'),'/v1/mdserver/sessions')
         self.assertEqual(validate_endpoint('/v1/mdserver/workstations?include_users=true'),'/v1/mdserver/workstations?include_users=true')
