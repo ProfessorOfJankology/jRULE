@@ -657,11 +657,24 @@ async function refreshLogs(){
     const category=logCategory(event);
     if(filter!=='all' && filter!==category)continue;
     const tr=el('tr',null,'log-'+String(event.level||'info').toLowerCase());
+    const messageTd=el('td');
+    messageTd.append(document.createTextNode(event.message||''));
+    let details=null;
+    if(event.details_json){
+      try{details=JSON.parse(event.details_json)}catch{details=event.details_json}
+    }
+    if(details!==null){
+      const expander=document.createElement('details');expander.className='log-details';
+      const summary=document.createElement('summary');summary.textContent='Details';
+      const pre=document.createElement('pre');
+      pre.textContent=typeof details==='string'?details:JSON.stringify(details,null,2);
+      expander.append(summary,pre);messageTd.append(expander);
+    }
     tr.append(
       el('td',formatLogTime(event.created_at)),
       el('td',event.level||''),
       el('td',event.event_type||''),
-      el('td',event.message||'')
+      messageTd
     );
     body.append(tr);shown++;
   }
