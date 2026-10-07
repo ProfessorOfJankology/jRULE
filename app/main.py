@@ -116,6 +116,41 @@ async def poll_now(name:str):
     except ValueError as e:raise HTTPException(400,str(e)) from e
     except Exception as e:raise HTTPException(502,str(e)) from e
 
+class DerivedFieldIn(BaseModel):
+    name:str
+    path:str
+    op:str='value'
+    value:Any=None
+    default:Any=None
+
+@app.get('/api/sources/{name}/fields')
+async def source_fields(name:str):
+    async with state.connection() as conn:
+        row=await (await conn.execute('SELECT discovered_json,mapping_json FROM http_sources WHERE name=?',(name,))).fetchone()
+    if not row:raise HTTPException(404,'Unknown source')
+    return {'fields':json.loads(row['discovered_json'] or '[]'),'mapping':json.loads(row['mapping_json'] or '{}')}
+
+@app.post('/api/sources/{name}/derived-fields')
+async def add_derived_field(name:str,payload:DerivedFieldIn):
+    try:
+        http.validate_name(payload.name)
+        spec={'path':payload.path,'op':payload.op,'default':payload.default}
+        if payload.op in ('contains','equals'):spec['value']=payload.value
+        http.validate_mapping({payload.name:spec})
+    except ValueError as e:raise HTTPException(400,str(e)) from e
+    async with state.connection() as conn:
+        row=await (await conn.execute('SELECT mapping_json FROM http_sources WHERE name=?',(name,))).fetchone()
+        if not row:raise HTTPException(404,'Unknown source')
+        mapping=json.loads(row['mapping_json'] or '{}')
+        mapping[payload.name]=spec
+        await conn.execute('UPDATE http_sources SET mapping_json=? WHERE name=?',(json.dumps(mapping),name))
+        await conn.commit()
+    try:
+        polled=await http.poll_source(name)
+    except Exception as e:
+        return {'ok':True,'name':payload.name,'poll_error':str(e)}
+    return {'ok':True,'name':payload.name,'updated':polled.get('updated',[])}
+
 class VariableIn(BaseModel):
     name:str
     value:Any=None
