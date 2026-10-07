@@ -93,19 +93,25 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(selected['present'])
 
     def test_discovered_fields(self):
-        fields=discover_fields({'workstation_users':{'ESC-R1':['JGRA']},'count':1})
+        fields=discover_fields({'workstation_users':{'ESC-R1':['JGRA']},'connected_workstations':['ESC-R1'],'count':1})
         paths={f['path'] for f in fields}
-        self.assertIn('workstation_users.ESC-R1.0',paths)
+        self.assertIn('workstation_users.ESC-R1',paths)
+        self.assertNotIn('workstation_users.ESC-R1.0',paths)
+        self.assertIn('connected_workstations',paths)
+        self.assertNotIn('connected_workstations.0',paths)
         self.assertIn('count',paths)
 
     def test_discovered_fields_are_cumulative(self):
-        first=merge_discovered_fields([],discover_fields({'workstation_users':{'ESC-R1':['JGRA']}}),'2026-10-07T08:00:00+00:00')
+        first=merge_discovered_fields(
+            [{'path':'connected_workstations.0','value':'OLD','type':'str','present':False,'last_seen':'2026-10-06T00:00:00+00:00'}],
+            discover_fields({'workstation_users':{'ESC-R1':['JGRA']}}),
+            '2026-10-07T08:00:00+00:00')
         second=merge_discovered_fields(first,discover_fields({'workstation_users':{}}),'2026-10-07T08:01:00+00:00')
         by_path={f['path']:f for f in second}
-        self.assertIn('workstation_users.ESC-R1.0',by_path)
-        self.assertFalse(by_path['workstation_users.ESC-R1.0']['present'])
-        self.assertEqual(by_path['workstation_users.ESC-R1.0']['value'],'JGRA')
-        self.assertEqual(by_path['workstation_users.ESC-R1.0']['last_seen'],'2026-10-07T08:00:00+00:00')
+        self.assertIn('workstation_users.ESC-R1',by_path)
+        self.assertFalse(by_path['workstation_users.ESC-R1']['present'])
+        self.assertEqual(by_path['workstation_users.ESC-R1']['value'],['JGRA'])
+        self.assertNotIn('connected_workstations.0',by_path)
 
     def test_recursive_body_template(self):
         payload={'username':'{{ current.presence.user }}','value':'{{ args.message }}','other':[1,True]}
