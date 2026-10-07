@@ -194,6 +194,15 @@ def compare(op: str, left: Any, right: Any = None, previous: Any = None) -> bool
             return a < b
         if op in {"lte", "<="}:
             return a <= b
+    elif op in {"gt",">","gte",">=","lt","<","lte","<="} and left is not None and right is not None:
+        try:
+            a,b=str(left),str(right)
+            if op in {"gt",">"}:return a>b
+            if op in {"gte",">="}:return a>=b
+            if op in {"lt","<"}:return a<b
+            if op in {"lte","<="}:return a<=b
+        except Exception:
+            return False
 
     if op == "contains":
         try:
