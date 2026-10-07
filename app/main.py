@@ -48,7 +48,16 @@ async def objects():return await state.pool()
 @app.get('/api/global-variables')
 async def variables():
     data=await state.pool()
-    return sorted([f'{t}.{name}.{prop}' for name,obj in data.items() for prop in obj['properties'] for t in ('current','previous')]+[f'meta.{name}.{prop}.{t}' for name,obj in data.items() for prop in obj['properties'] for t in ('last_polled','last_changed')])
+    values=[f'{t}.{name}.{prop}' for name,obj in data.items() for prop in obj['properties'] for t in ('current','previous')]
+    values += [f'meta.{name}.{prop}.{t}' for name,obj in data.items() for prop in obj['properties'] for t in ('last_polled','last_changed')]
+    for name,obj in data.items():
+        if obj.get('source_meta'):
+            values += [
+                f'meta.{name}.checks_since_poll',
+                f'meta.{name}.poll_sequence',
+                f'meta.{name}.last_poll',
+            ]
+    return sorted(values)
 @app.get('/api/modules/sources')
 async def source_catalog():return {'japi.get':{'kind':'poll','object_types':['japi'],'supports_mapping':True,'supports_query':True,'supports_derived_fields':True}}
 @app.get('/api/modules/actions')
