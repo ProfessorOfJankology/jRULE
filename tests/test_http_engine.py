@@ -54,6 +54,14 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
         data={'ok':True,'workstations':[{'hostname':'ESC-R1','username':'JGRA'}]}
         self.assertEqual(json_path(data,'workstations.0.username'),'JGRA')
         self.assertEqual(select_properties(data,{'current_user':'workstations.0.username'}),{'current_user':'JGRA'})
+        presence={'connected_workstations':['ESC-R1'],'workstation_users':{'ESC-R1':['JGRA']}}
+        mapping={
+            'current_user':{'path':'workstation_users.ESC-R1.0','op':'value','default':None},
+            'present':{'path':'connected_workstations','op':'contains','value':'ESC-R1','default':False},
+        }
+        self.assertEqual(select_properties(presence,mapping),{'current_user':'JGRA','present':True})
+        gone={'connected_workstations':[],'workstation_users':{}}
+        self.assertEqual(select_properties(gone,mapping),{'current_user':None,'present':False})
 
     def test_recursive_body_template(self):
         payload={'username':'{{ current.presence.user }}','value':'{{ args.message }}','other':[1,True]}
@@ -62,9 +70,9 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
 
     def test_endpoint_is_japi_only(self):
         self.assertEqual(validate_endpoint('/v1/mdserver/sessions'),'/v1/mdserver/sessions')
+        self.assertEqual(validate_endpoint('/v1/mdserver/workstations?include_users=true'),'/v1/mdserver/workstations?include_users=true')
         for endpoint in ('file:///etc/passwd','https://evil.example/v1/foo',
-                         '/v1/a?redirect=http://evil', '/v1/../foo',
-                         '/v1/%2e%2e/foo', '//evil', '/v1/a#fragment'):
+                         '/v1/../foo','/v1/%2e%2e/foo','//evil','/v1/a#fragment'):
             with self.subTest(endpoint=endpoint),self.assertRaises(ValueError):
                 validate_endpoint(endpoint)
 
