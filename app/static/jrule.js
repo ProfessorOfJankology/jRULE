@@ -42,6 +42,11 @@ async function objCard(name,info){
   const left=el('div');
   left.append(el('h3',name),el('p',`${info.module} / ${info.type}`,'muted'));
   title.append(left);
+  if(info.source_meta){
+    const sm=info.source_meta;
+    const meta=el('p',`Poll #${sm.poll_sequence} · checks since poll: ${sm.checks_since_poll} · last poll: ${sm.last_poll||'never'}`,'muted');
+    left.append(meta);
+  }
   c.append(title);
 
   const table=el('table',null,'parameter-table'),head=el('tr');
@@ -276,6 +281,18 @@ const OPERATOR_GROUPS=[
 const NO_RIGHT=new Set(['exists','not_exists','is_true','is_false','changed']);
 const RANGE_RIGHT=new Set(['between','not_between','time_between','time_not_between','date_between','date_not_between']);
 
+function prettyParameter(p){
+  const parts=p.split('.');
+  if(parts[0]==='meta' && parts.length===3){
+    const labels={checks_since_poll:'checks since poll',poll_sequence:'poll sequence',last_poll:'last poll'};
+    return parts[1]+' · '+(labels[parts[2]]||parts[2]);
+  }
+  if((parts[0]==='current'||parts[0]==='previous') && parts.length>=3)
+    return parts[1]+' · '+parts.slice(2).join('.')+' ('+parts[0]+')';
+  if(parts[0]==='meta' && parts.length>=4)
+    return parts[1]+' · '+parts.slice(2,-1).join('.')+' · '+parts.at(-1);
+  return p;
+}
 function parameterSelect(value='',leftSide=false){
   const s=document.createElement('select');
   const values=(leftSide?ruleParameters.filter(v=>!v.startsWith('previous.')):ruleParameters);
@@ -288,7 +305,7 @@ function parameterSelect(value='',leftSide=false){
   }
   for(const [group,items] of groups){
     const og=document.createElement('optgroup');og.label=group;
-    for(const p of items){const o=document.createElement('option');o.value=p;o.textContent=p;if(p===value)o.selected=true;og.append(o);}
+    for(const p of items){const o=document.createElement('option');o.value=p;o.textContent=prettyParameter(p);if(p===value)o.selected=true;og.append(o);}
     s.append(og);
   }
   if(value && !values.includes(value)){const o=document.createElement('option');o.value=value;o.textContent=value+' (missing)';o.selected=true;s.prepend(o);}
