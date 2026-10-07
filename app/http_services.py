@@ -245,7 +245,17 @@ async def invoke_action(name,arguments,context):
                 f"Action {name} failed: HTTP {resp.status_code}; response={json.dumps(response_detail,default=str)}; "
                 f"payload={json.dumps(payload,default=str)}"
             )
-    await db.log_event(level='info',event_type='http_action_sent',message=f'Action {name} completed: HTTP {resp.status_code}')
+    await db.log_event(
+        level='info',
+        event_type='http_action_sent',
+        message=f'Action {name} completed: HTTP {resp.status_code}',
+        details={
+            'action':name,
+            'endpoint':row['url'],
+            'status_code':resp.status_code,
+            'payload':payload,
+        },
+    )
 
 async def loop(stop):
     due={}
