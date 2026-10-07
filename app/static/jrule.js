@@ -634,9 +634,42 @@ async function saveRule(e){
   }catch(err){notice(err.message)}
 }
 
+function logCategory(event){
+  const type=String(event.event_type||'');
+  if(String(event.level||'').toLowerCase()==='error')return 'errors';
+  if(type.includes('rule')||type.includes('engine'))return 'rules';
+  if(type.includes('action')||type.includes('http_action'))return 'actions';
+  if(type.includes('source')||type.includes('poll'))return 'sources';
+  return 'other';
+}
+function formatLogTime(value){
+  if(!value)return '';
+  const d=new Date(value);
+  return Number.isNaN(d.getTime())?value:d.toLocaleString();
+}
+async function refreshLogs(){
+  const limit=Number($('#log-limit')?.value||100);
+  const filter=$('#log-filter')?.value||'all';
+  const events=await api('/api/events?limit='+encodeURIComponent(limit));
+  const body=$('#log-body');body.replaceChildren();
+  let shown=0;
+  for(const event of events){
+    const category=logCategory(event);
+    if(filter!=='all' && filter!==category)continue;
+    const tr=el('tr',null,'log-'+String(event.level||'info').toLowerCase());
+    tr.append(
+      el('td',formatLogTime(event.created_at)),
+      el('td',event.level||''),
+      el('td',event.event_type||''),
+      el('td',event.message||'')
+    );
+    body.append(tr);shown++;
+  }
+  $('#log-empty').hidden=shown!==0;
+}
 function switchTab(){
   let tab=location.hash.slice(1)||'state';
-  if(!['state','sources','variables','actions','rules','settings'].includes(tab))tab='state';
+  if(!['state','sources','variables','actions','rules','logs','settings'].includes(tab))tab='state';
   for(const sec of document.querySelectorAll('main section'))sec.hidden=sec.id!==tab;
   for(const a of document.querySelectorAll('nav a[href^="#"]'))a.classList.toggle('active',a.hash==='#'+tab);
 }
@@ -658,17 +691,20 @@ $('#derived-form').onsubmit=saveDerived;
 $('#rule-form').onsubmit=saveRule;
 $('#add-rule-action').onclick=()=>addRuleAction({});
 $('#apply-raw-rule').onclick=loadRawRuleIntoBuilder;
+$('#refresh-logs').onclick=()=>refreshLogs().catch(e=>notice(e.message));
+$('#log-filter').onchange=()=>refreshLogs().catch(e=>notice(e.message));
+$('#log-limit').onchange=()=>refreshLogs().catch(e=>notice(e.message));
 $('#settings-form').onsubmit=async e=>{
   e.preventDefault();
   try{await api('/api/settings','PUT',{rule_interval_seconds:Number(e.target.elements.rule_interval_seconds.value)});notice('Settings saved');}
   catch(err){notice(err.message)}
 };
-$('#refresh').onclick=()=>Promise.all([pool(),refreshSources(),refreshVariables(),refreshActions(),refreshRules()]).catch(e=>notice(e.message));
+$('#refresh').onclick=()=>Promise.all([pool(),refreshSources(),refreshVariables(),refreshActions(),refreshRules(),refreshLogs()]).catch(e=>notice(e.message));
 
 (async()=>{
   switchTab();
   try{
-    await Promise.all([pool(),refreshSources(),refreshVariables(),refreshActions(),refreshRules()]);
+    await Promise.all([pool(),refreshSources(),refreshVariables(),refreshActions(),refreshRules(),refreshLogs()]);
     $('#settings-form').elements.rule_interval_seconds.value=(await api('/api/settings')).rule_interval_seconds;
   }catch(e){notice(e.message)}
 })();
