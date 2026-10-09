@@ -16,3 +16,16 @@
 .log-details{margin-top:7px}.log-details summary{cursor:pointer;color:#8bd8ff}.log-details pre{margin:7px 0 0;padding:10px;background:#0c161d;border:1px solid #304754;border-radius:6px;white-space:pre-wrap;overflow-wrap:anywhere;font:12px ui-monospace,Consolas,monospace}
 
 .action-preview{margin:10px 0}.action-preview summary{cursor:pointer;color:#acc6d5}.action-preview pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#0c161d;border:1px solid #304754;padding:10px;border-radius:6px}.action-arg label>select{width:160px}.arg-value-holder{width:calc(100% - 172px)}
+
+/* Action arguments: one full-width, consistently aligned row per parameter. */
+.action-row{grid-template-columns:1fr auto;align-items:start}
+.action-row>.action-method{grid-column:1}
+.action-row>.action-arguments{grid-column:1 / -1;grid-row:2;display:flex;flex-direction:column;gap:8px;min-width:0}
+.action-row>.danger{grid-column:2;grid-row:1}
+.action-arg{width:100%;min-width:0;border:1px solid #304754;border-radius:7px;padding:9px;background:#11232d}
+.action-arg label{display:grid;grid-template-columns:minmax(130px,180px) 180px minmax(0,1fr);align-items:start;gap:12px;width:100%;min-width:0}
+.action-arg label>.arg-mode{width:100%;margin:0}
+.action-arg .arg-value-holder{display:block;width:100%;min-width:0}
+.action-arg .arg-value-holder input,.action-arg .arg-value-holder select{width:100%;min-width:0}
+.action-arg .expression-editor,.action-arg .parameter-reference{min-width:0;width:100%}
+@media(max-width:850px){.action-arg label{grid-template-columns:1fr;gap:6px}.action-row{grid-template-columns:1fr}.action-row>.danger{grid-column:1;grid-row:3;justify-self:end}.action-row>.action-arguments{grid-column:1}}
