@@ -21,7 +21,7 @@ workers=[]
 async def lifespan(app):
     await db.init_db()
     stop.clear()
-    workers.extend([asyncio.create_task(engine.loop(stop)),asyncio.create_task(http.loop(stop)),asyncio.create_task(log_cleanup_loop(stop))])
+    workers.extend([asyncio.create_task(engine.loop(stop)),asyncio.create_task(log_cleanup_loop(stop))])
     yield
     stop.set()
     await asyncio.gather(*workers,return_exceptions=True)
@@ -67,7 +67,6 @@ async def variables():
     for name,obj in data.items():
         if obj.get('source_meta'):
             values.update({
-                f'meta.{name}.checks_since_poll',
                 f'meta.{name}.poll_sequence',
                 f'meta.{name}.last_poll',
             })
@@ -112,7 +111,7 @@ async def put_settings(payload:dict[str,Any]):
 class SourceIn(BaseModel):
     name:str
     url:str
-    interval_seconds:int=60
+    interval_seconds:int=60 # Legacy field retained for existing API clients; unified timer controls polling
     mapping:dict[str,Any]=Field(default_factory=dict)
     enabled:bool=True
 
@@ -121,7 +120,6 @@ def validate_source(payload:SourceIn):
         http.validate_name(payload.name)
         http.validate_endpoint(payload.url)
         http.validate_mapping(payload.mapping)
-        if not 5<=payload.interval_seconds<=86400:raise ValueError('Polling interval must be 5..86400 seconds')
     except ValueError as e:raise HTTPException(400,str(e)) from e
 
 @app.get('/api/sources')
@@ -158,7 +156,7 @@ async def delete_source(name:str):
     return {'ok':True}
 @app.post('/api/sources/{name}/poll')
 async def poll_now(name:str):
-    try:return await http.poll_source(name)
+    try:return {'results':await engine.evaluate_once()}
     except ValueError as e:raise HTTPException(400,str(e)) from e
     except Exception as e:raise HTTPException(502,str(e)) from e
 
@@ -206,7 +204,7 @@ async def add_derived_field(name:str,payload:DerivedFieldIn):
         await conn.execute('UPDATE http_sources SET mapping_json=? WHERE name=?',(json.dumps(mapping),name))
         await conn.commit()
     try:
-        polled=await http.poll_source(name)
+        polled=await engine.evaluate_once()
     except Exception as e:
         return {'ok':True,'name':payload.name,'poll_error':str(e)}
     return {'ok':True,'name':payload.name,'updated':polled.get('updated',[])}
