@@ -69,3 +69,29 @@ async def loop(stop:asyncio.Event)->None:
             await asyncio.wait_for(stop.wait(),timeout=interval)
         except asyncio.TimeoutError:
             pass
+async def force_run_rule(rule_id: int) -> dict:
+    """Run one saved rule's actions regardless of condition/cooldown. Explicit manual action."""
+    async with evaluation_lock:
+        async with state.connection() as conn:
+            row=await (await conn.execute("SELECT * FROM global_rules WHERE id=?",(rule_id,))).fetchone()
+        if row is None:
+            raise KeyError(f"Unknown rule: {rule_id}")
+        rule=dict(row)
+        snapshot=await state.pool()
+        context=state.condition_context(snapshot)
+        executed=0
+        try:
+            if os.getenv("JRULE_ENABLE_ACTIONS","0")!="1":
+                raise PermissionError("Actions disabled (JRULE_ENABLE_ACTIONS=0)")
+            for action in json.loads(rule["actions_json"]):
+                await modules.invoke(action["method"],action.get("object",""),action.get("arguments",{}),context)
+                executed+=1
+            if executed:
+                async with state.connection() as conn:
+                    await conn.execute("UPDATE global_rules SET last_write_at=? WHERE id=?",(db.utc_now(),rule_id))
+                    await conn.commit()
+            await db.log_event(level="info",event_type="rule_forced",message=f"{rule['name']}: manually ran {executed} action(s)",details={"rule_id":rule_id,"actions_executed":executed})
+            return {"ok":True,"rule_id":rule_id,"forced":True,"actions_executed":executed}
+        except Exception as exc:
+            await db.log_event(level="error",event_type="rule_force_error",message=f"{rule['name']}: {exc}",details={"rule_id":rule_id,"actions_completed":executed})
+            raise
