@@ -341,7 +341,7 @@ async function saveDerived(e){
 
 const OPERATOR_GROUPS=[
   ['Compare',[['eq','is'],['ne','is not'],['gt','is greater than'],['gte','is at least'],['lt','is less than'],['lte','is at most']]],
-  ['Collection / text',[['contains','contains'],['not_contains','does not contain'],['in','is in'],['not_in','is not in']]],
+  ['Collection / text',[['contains','contains'],['not_contains','does not contain'],['contains_recursive','contains (recursive)'],['not_contains_recursive','does not contain (recursive)'],['in','is in'],['not_in','is not in']]],
   ['State',[['exists','exists'],['not_exists','does not exist'],['changed','has changed'],['changed_to','changed to'],['changed_from','changed from']]]
 ];
 const NO_RIGHT=new Set(['exists','not_exists','changed']);
