@@ -2,7 +2,7 @@
 import json
 import os
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import aiosqlite
 
 DB_PATH=Path(os.environ.get("JRULE_DB", "/var/lib/jrule/jrule.db"))
@@ -36,6 +36,7 @@ async def init_db():
         if 'checks_since_poll' not in cols:
             await conn.execute("ALTER TABLE http_sources ADD COLUMN checks_since_poll INTEGER NOT NULL DEFAULT 0")
         await conn.execute("INSERT OR IGNORE INTO settings(key,value_json) VALUES('rule_interval_seconds','10')")
+        await conn.execute("INSERT OR IGNORE INTO settings(key,value_json) VALUES('log_retention_days','1')")
         await conn.execute("INSERT OR IGNORE INTO objects(name,module,type,config_json,enabled) VALUES('variables','builtin.variables','variables','{}',1)")
         await conn.commit()
     finally: await conn.close()
@@ -58,3 +59,15 @@ async def log_event(*,level,event_type,message,details=None,**_):
         await conn.execute('INSERT INTO event_log(created_at,level,event_type,message,details_json) VALUES(?,?,?,?,?)',(utc_now(),level,event_type,message,json.dumps(details,default=str) if details is not None else None))
         await conn.commit()
     finally: await conn.close()
+async def prune_event_logs(retention_days: int) -> int:
+    """Remove expired audit events without touching source or rule state."""
+    if not 1 <= retention_days <= 365:
+        raise ValueError("Log retention must be between 1 and 365 days")
+    cutoff=(datetime.now(timezone.utc)-timedelta(days=retention_days)).isoformat()
+    conn=await connect()
+    try:
+        cursor=await conn.execute("DELETE FROM event_log WHERE created_at < ?",(cutoff,))
+        await conn.commit()
+        return cursor.rowcount
+    finally:
+        await conn.close()
