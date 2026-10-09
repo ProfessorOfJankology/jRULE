@@ -53,7 +53,7 @@ async function objCard(name,info){
   title.append(left);
   if(info.source_meta){
     const sm=info.source_meta;
-    const meta=el('p',`Poll #${sm.poll_sequence} · checks since poll: ${sm.checks_since_poll} · last poll: ${sm.last_poll||'never'}`,'muted');
+    const meta=el('p',`Poll #${sm.poll_sequence} · last poll: ${sm.last_poll||'never'}`,'muted');
     left.append(meta);
   }
   c.append(title);
@@ -357,7 +357,7 @@ const TRANSFORMS=[
 function prettyParameter(p){
   const parts=p.split('.');
   if(parts[0]==='meta' && parts.length===3){
-    const labels={checks_since_poll:'checks since poll',poll_sequence:'poll sequence',last_poll:'last poll'};
+    const labels={poll_sequence:'poll sequence',last_poll:'last poll'};
     return parts[1]+' · '+(labels[parts[2]]||parts[2]);
   }
   if(parts[0]==='current' && parts.length>=3)
