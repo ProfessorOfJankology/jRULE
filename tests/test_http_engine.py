@@ -169,7 +169,8 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(modules.resolve_action_argument('103',{}),'103')
         self.assertEqual(modules.resolve_action_argument(103,{}),103)
         self.assertIsNone(modules.resolve_action_argument(None,{}))
-        self.assertEqual(modules.resolve_action_argument({'kind':'literal','value':'103'},{}),'103')
+        self.assertEqual(modules.resolve_action_argument({'kind':'literal','value':'103'},{}),{'kind':'literal','value':'103'})
+        self.assertEqual(modules.unwrap_literal({'kind':'literal','value':'{{ raw }}'}),'{{ raw }}')
 
     def test_endpoint_is_japi_only(self):
         self.assertEqual(validate_endpoint('/v1/mdserver/sessions'),'/v1/mdserver/sessions')
