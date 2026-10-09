@@ -156,6 +156,10 @@ async def delete_source(name:str):
     return {'ok':True}
 @app.post('/api/sources/{name}/poll')
 async def poll_now(name:str):
+    async with state.connection() as conn:
+        row=await (await conn.execute(
+            "SELECT 1 FROM http_sources WHERE name=?",(name,))).fetchone()
+    if not row:raise HTTPException(404,'Unknown source')
     try:return {'results':await engine.evaluate_once()}
     except ValueError as e:raise HTTPException(400,str(e)) from e
     except Exception as e:raise HTTPException(502,str(e)) from e
