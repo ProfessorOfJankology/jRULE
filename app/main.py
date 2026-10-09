@@ -322,7 +322,16 @@ async def run_rule_now(id:int):
 @app.post('/api/global-rules/evaluate')
 async def evaluate_now():return await engine.evaluate_once()
 @app.get('/api/events')
-async def events(limit:int=100):
+async def events(limit:int=100,category:str='all'):
+    if category not in {'all','sources','errors','rules','actions'}:
+        raise HTTPException(400,'Invalid event category')
+    filters={
+        'sources':"event_type LIKE 'source_%'",
+        'errors':"level='error'",
+        'rules':"(event_type LIKE '%rule%' OR event_type LIKE '%engine%')",
+        'actions':"(event_type LIKE '%action%')",
+    }
+    where=(' WHERE '+filters[category]) if category!='all' else ''
     async with state.connection() as conn:
-        rows=await (await conn.execute('SELECT * FROM event_log ORDER BY id DESC LIMIT ?', (max(1,min(limit,500)),))).fetchall()
+        rows=await (await conn.execute('SELECT * FROM event_log'+where+' ORDER BY id DESC LIMIT ?', (max(1,min(limit,500)),))).fetchall()
     return [dict(r) for r in rows]
