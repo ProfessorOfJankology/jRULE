@@ -3,10 +3,10 @@
 A small self-hosted rules engine that observes **named jAPI GET sources** and runs **configured jAPI POST actions**. It is independent of Tapo Rules.
 
 - Deploys to `/opt/jrule` via `jrule.service`; SQLite lives in `/var/lib/jrule/jrule.db`.
-- Each source needs a **name**, a **relative jAPI endpoint** (query strings supported, e.g. `/v1/mdserver/workstations?include_users=true`) and optionally a polling interval and derived property mapping.
+- Each source needs a **name**, a **relative jAPI endpoint** (query strings supported, e.g. `/v1/mdserver/workstations?include_users=true`) and optionally a derived property mapping. All enabled sources use one global cycle interval.
 - Each POST action needs a name, relative endpoint and JSON body template.
-- All sources publish into one shared global property pool. A poll advances `last`/`current` only for properties included in that poll.
-- Rules run on a configurable schedule and can inspect any `current.<object>.<property>`, `previous.<object>.<property>`, or `meta.<object>.<property>.last_changed`.
+- All sources publish into one shared global property pool. Each successful cycle advances `last`/`current` once for the properties returned by each source.
+- Sources poll concurrently and publish together before rules run on the same configurable schedule and can inspect any `current.<object>.<property>`, `previous.<object>.<property>`, or `meta.<object>.<property>.last_changed`.
 - jRULE uses the jAPI `X-API-Key` automatically. No per-source or per-action credential configuration, SQL access, or arbitrary target URLs.
 
 ## Install or upgrade on esc-japps
@@ -30,11 +30,19 @@ If jAPI isn't local, the base URL must be explicitly configured server-side; the
 
 Set `JRULE_ADMIN_TOKEN` to a long random secret in `/etc/jrule/jrule.env` and restart the service. Supply it in jRULE's Settings tab to create, edit, delete, or manually poll. Avoid exposing the HTTP UI over untrusted networks. Read-only `/api/objects` exposes source data to LAN clients without authentication: keep on a trusted LAN or add reverse-proxy authentication.
 
+## Unified evaluation cycle
+
+One scheduler runs at the configured **Rule evaluation interval** (default 10 seconds). Each cycle fetches all enabled jAPI GET sources concurrently (10-second request timeout), stages successful results, publishes them in one SQLite transaction, evaluates enabled rules against that snapshot, then invokes matching actions in priority order. Cycles cannot overlap. A new cycle waits for the previous cycle to finish and then the configured delay.
+
+`previous` is the immediately preceding successful poll value, even when unchanged. Failed source requests retain their stored values and expose an error in source metadata rather than impersonating an offline event. `checks_since_poll` is removed, and per-source interval settings no longer schedule separate polls. Existing rules are **not modified**; remove any references to `checks_since_poll` manually before deploying.
+
+Manual "Poll" and "Evaluate" controls execute a full unified cycle and may run enabled actions when `JRULE_ENABLE_ACTIONS=1`. The separate "Force run" action still executes saved actions regardless of their condition and cooldown.
+
 ## Configure a source
 
 - Name: `presence`
 - Endpoint: `/v1/mdserver/sessions`
-- Poll interval: 30 seconds
+- Poll interval: controlled by the global cycle setting
 - Mapping: `{}` (import top-level response fields; only names matching `[A-Za-z][A-Za-z0-9_-]*` are supported)
 
 Optional mappings can be plain dotted paths or derived mapping objects. Derived mappings support `value`, `first`, `count`, `exists`, `contains`, and `equals`, plus a default used when a path disappears. A failed request updates source health but **does not** advance properties.
@@ -43,7 +51,7 @@ Example presence source:
 
 - Name: `presence`
 - Endpoint: `/v1/mdserver/workstations?include_users=true`
-- Interval: 30 seconds
+- Interval: controlled by the global cycle setting
 - Derived mapping for ESC-R1:
 
 ```json
