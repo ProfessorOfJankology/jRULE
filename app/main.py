@@ -203,11 +203,9 @@ async def add_derived_field(name:str,payload:DerivedFieldIn):
         mapping[payload.name]=spec
         await conn.execute('UPDATE http_sources SET mapping_json=? WHERE name=?',(json.dumps(mapping),name))
         await conn.commit()
-    try:
-        polled=await engine.evaluate_once()
-    except Exception as e:
-        return {'ok':True,'name':payload.name,'poll_error':str(e)}
-    return {'ok':True,'name':payload.name,'updated':polled.get('updated',[])}
+    # The next unified cycle will publish the newly derived property.
+    # Do not trigger rule actions as a side effect of editing a mapping.
+    return {'ok':True,'name':payload.name,'updated':[]}
 
 class VariableIn(BaseModel):
     name:str
