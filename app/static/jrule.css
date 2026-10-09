@@ -29,3 +29,13 @@
 .action-arg .arg-value-holder input,.action-arg .arg-value-holder select{width:100%;min-width:0}
 .action-arg .expression-editor,.action-arg .parameter-reference{min-width:0;width:100%}
 @media(max-width:850px){.action-arg label{grid-template-columns:1fr;gap:6px}.action-row{grid-template-columns:1fr}.action-row>.danger{grid-column:1;grid-row:3;justify-self:end}.action-row>.action-arguments{grid-column:1}}
+
+/* Align the operator with the first row of either expression editor. */
+.condition-row{align-items:start}
+.condition-row>.condition-operator,.condition-row>.condition-right,.condition-row>.danger{margin-top:0}
+.condition-right{align-items:start;min-width:0}
+.condition-right>.right-value-holder{min-width:0}
+.condition-right .right-expression{width:100%;min-width:0}
+.condition-right .right-expression .parameter-reference{min-width:0}
+#notice.visible{display:flex;align-items:center;justify-content:space-between;gap:16px}
+#notice .notice-close{flex:none;padding:2px 8px;font-size:18px;line-height:1.2}
