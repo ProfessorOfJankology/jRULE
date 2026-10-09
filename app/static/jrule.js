@@ -483,6 +483,17 @@ function literalInput(value,cls='condition-value'){
   i.value=value===undefined||value===null?(value===null?'null':''):(typeof value==='string'?value:j(value));
   return i;
 }
+function conditionValueMode(node){
+  if(['variable','expression'].includes(node.right_type))return 'parameter';
+  const value=node.right;
+  // Legacy conditions used automatic scalar parsing in the backend.
+  const parsed=node.right_type==='typed'?value:(typeof value==='string'?parseLooseJson(value,value):value);
+  if(parsed===null)return 'null';
+  if(typeof parsed==='boolean')return 'boolean';
+  if(typeof parsed==='number')return 'number';
+  if(Array.isArray(parsed)||(parsed&&typeof parsed==='object'))return 'json';
+  return 'string';
+}
 function renderConditionRight(row,node={}){
   const slot=row.querySelector('.condition-right');slot.replaceChildren();
   const op=row.querySelector('.condition-operator').value;
@@ -493,20 +504,52 @@ function renderConditionRight(row,node={}){
     a.placeholder='From';b.placeholder='To';slot.append(a,el('span','and','muted'),b);return;
   }
   const mode=document.createElement('select');mode.className='right-mode';
-  for(const pair of [['literal','value'],['variable','parameter']]){
-    const o=document.createElement('option');o.value=pair[0];o.textContent=pair[1];mode.append(o);
+  for(const [value,label] of [['string','String'],['number','Number'],['boolean','Boolean'],['null','Null'],['parameter','Parameter'],['literal','Literal (unconverted)'],['json','JSON (advanced)']]){
+    const option=document.createElement('option');option.value=value;option.textContent=label;mode.append(option);
   }
-  mode.value=['variable','expression'].includes(node.right_type)?'variable':'literal';
+  const initialMode=conditionValueMode(node);
+  mode.value=initialMode;
   const holder=el('span',null,'right-value-holder');
-  const draw=()=>{
-    holder.replaceChildren();
-    if(mode.value==='variable'){
-      const original=['variable','expression'].includes(node.right_type)?node.right:'';
-      const editor=expressionEditor(original);
-      editor.classList.add('right-expression');holder.append(editor);
-    }else holder.append(literalInput(['variable','expression'].includes(node.right_type)?'':node.right,'condition-value'));
+  let previousMode=initialMode;
+  const initialValue=()=>{
+    if(initialMode==='parameter')return node.right;
+    if(node.right_type==='typed')return node.right;
+    return typeof node.right==='string'?parseLooseJson(node.right,node.right):node.right;
   };
-  mode.onchange=()=>{node={};draw();};draw();slot.append(mode,holder);
+  const draw=value=>{
+    holder.replaceChildren();
+    if(mode.value==='parameter'){
+      const editor=expressionEditor(value||'');
+      editor.classList.add('right-expression');holder.append(editor);
+    }else if(mode.value==='null'){
+      holder.append(el('span','null','muted'));
+    }else if(mode.value==='boolean'){
+      const select=document.createElement('select');select.className='condition-value';
+      for(const v of ['true','false']){const o=document.createElement('option');o.value=v;o.textContent=v;select.append(o);}
+      select.value=String(value??false);holder.append(select);
+    }else{
+      const input=document.createElement('input');input.className='condition-value';
+      input.value=mode.value==='json'?JSON.stringify(value??null):String(value??'');
+      input.placeholder=mode.value==='literal'?'Exact text, no conversions':'Value';
+      holder.append(input);
+    }
+  };
+  const read=()=>{
+    if(mode.value==='parameter')return expressionFromEditor(holder.querySelector('.right-expression'));
+    if(mode.value==='null')return null;
+    return holder.querySelector('.condition-value')?.value??'';
+  };
+  mode.onchange=()=>{
+    const nextMode=mode.value;
+    mode.value=previousMode;
+    const oldValue=read();
+    mode.value=nextMode;
+    const nextValue=nextMode==='boolean'?false:nextMode==='null'?null:nextMode==='parameter'?'':oldValue;
+    draw(nextValue);
+    previousMode=nextMode;
+  };
+  draw(initialValue());
+  slot.append(mode,holder);
 }
 function addCondition(group,node={}){
   const row=el('div',null,'condition-row');row.dataset.kind='condition';
@@ -547,8 +590,26 @@ function conditionFromRow(row){
     out.right=[parseLooseJson(row.querySelector('.range-a').value,''),parseLooseJson(row.querySelector('.range-b').value,'')];return out;
   }
   const mode=row.querySelector('.right-mode').value;
-  if(mode==='variable'){out.right_type='expression';out.right=expressionFromEditor(row.querySelector('.right-expression'));}
-  else out.right=parseLooseJson(row.querySelector('.condition-value').value,'');
+  if(mode==='parameter'){
+    out.right_type='expression';
+    out.right=expressionFromEditor(row.querySelector('.right-expression'));
+  }else{
+    const raw=mode==='null'?'':row.querySelector('.condition-value')?.value??'';
+    if(mode==='number'){
+      if(!raw.trim()||!Number.isFinite(Number(raw)))throw Error('Condition number must be finite');
+      out.right=Number(raw);
+    }else if(mode==='boolean'){
+      out.right=raw==='true';
+    }else if(mode==='null'){
+      out.right=null;
+    }else if(mode==='json'){
+      try{out.right=JSON.parse(raw);}catch{throw Error('Invalid condition JSON value');}
+    }else{
+      out.right=raw;
+    }
+    // Explicitly typed operands bypass legacy parse_scalar auto-conversion.
+    out.right_type='typed';
+  }
   return out;
 }
 function conditionFromGroup(group){
