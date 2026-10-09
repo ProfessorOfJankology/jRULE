@@ -191,6 +191,17 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result['variables']['properties']['armed']['last'])
         self.assertFalse(result['variables']['properties']['armed']['current'])
 
+    async def test_event_source_filter(self):
+        await db.log_event(level='info',event_type='source_poll',message='presence poll',
+                           details={'response':{'workstation_users':{'ESC-R1':['jordan.grey']}}})
+        await db.log_event(level='error',event_type='source_poll_error',message='timeout')
+        async with state.connection() as conn:
+            rows=await (await conn.execute(
+                "SELECT event_type,details_json FROM event_log WHERE event_type LIKE 'source_%' ORDER BY id"
+            )).fetchall()
+        self.assertEqual([row['event_type'] for row in rows],['source_poll','source_poll_error'])
+        self.assertEqual(json.loads(rows[0]['details_json'])['response']['workstation_users']['ESC-R1'],['jordan.grey'])
+
     def test_japi_url_uses_server_side_base(self):
         from app.http_services import japi_url
         with patch.dict(os.environ,{'JRULE_JAPI_BASE_URL':'http://127.0.0.1:8088'}):
