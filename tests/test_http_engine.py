@@ -132,7 +132,6 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
             'count':'{{ args.count }}',
             'enabled':'{{ args.enabled }}',
             'items':'{{ args.items }}',
-            'embedded':'user={{ args.username }}',
         }
         ctx={'args':{'username':None,'count':3,'enabled':True,'items':['a','b']}}
         rendered=render_body(payload,ctx)
