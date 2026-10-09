@@ -13,21 +13,52 @@ evaluation_lock = asyncio.Lock()
 async def evaluate_once() -> list[dict]:
     """Serialise manual and scheduled runs: never execute one rule twice concurrently."""
     async with evaluation_lock:
-        await http_services.poll_all_sources()
-        return await _evaluate_once_unlocked()
+        published=await http_services.poll_all_sources()
+        return await _evaluate_once_unlocked({entry['name'] for entry in published})
 
 
-async def _evaluate_once_unlocked() -> list[dict]:
+def condition_source_dependencies(node, source_names: set[str]) -> set[str]:
+    """Discover jAPI source references used by a saved condition tree."""
+    if not isinstance(node,dict):
+        return set()
+    if node.get("kind")=="group":
+        required=set()
+        for item in node.get("items") or []:
+            required.update(condition_source_dependencies(item,source_names))
+        return required
+    required=set()
+    expressions=[node.get("left")]
+    if node.get("right_type") in ("variable","expression"):
+        expressions.append(node.get("right"))
+    for expression in expressions:
+        path=expression.get("source","") if isinstance(expression,dict) else expression
+        if not isinstance(path,str):
+            continue
+        parts=path.split(".")
+        if len(parts)>=3 and parts[0] in ("current","previous","meta") and parts[1] in source_names:
+            required.add(parts[1])
+    return required
+
+
+async def _evaluate_once_unlocked(published_sources: set[str] | None = None) -> list[dict]:
     snapshot=await state.pool()
     context=state.condition_context(snapshot)
     now=datetime.now(timezone.utc)
+    source_names={name for name,obj in snapshot.items() if obj.get('source_meta')}
     results=[]
     async with state.connection() as conn:
         rows=await (await conn.execute("SELECT * FROM global_rules WHERE enabled=1 ORDER BY priority,id")).fetchall()
     for row in rows:
         rule=dict(row)
         try:
-            matched=evaluate_condition(json.loads(rule["condition_json"]),context)
+            condition=json.loads(rule["condition_json"])
+            required=condition_source_dependencies(condition,source_names)
+            missing=required-(published_sources if published_sources is not None else source_names)
+            if missing:
+                results.append({"id":rule["id"],"matched":False,
+                                "skipped_stale_sources":sorted(missing),"executed":False})
+                continue
+            matched=evaluate_condition(condition,context)
             written=False
             skipped=False
             if matched and rule["last_write_at"] and rule["cooldown_seconds"]:
