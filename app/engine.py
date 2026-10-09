@@ -1,10 +1,10 @@
-"""Global, periodic rule evaluations independent of device polling."""
+"""One serialized cycle: poll sources, publish state, evaluate rules and actions."""
 from __future__ import annotations
 import asyncio
 import json
 import os
 from datetime import datetime,timezone
-from . import db, state, modules
+from . import db, state, modules, http_services
 from .rules import evaluate_condition
 
 evaluation_lock = asyncio.Lock()
@@ -13,17 +13,16 @@ evaluation_lock = asyncio.Lock()
 async def evaluate_once() -> list[dict]:
     """Serialise manual and scheduled runs: never execute one rule twice concurrently."""
     async with evaluation_lock:
+        await http_services.poll_all_sources()
         return await _evaluate_once_unlocked()
 
 
 async def _evaluate_once_unlocked() -> list[dict]:
     snapshot=await state.pool()
     context=state.condition_context(snapshot)
-    sequences={name:int(obj["source_meta"]["poll_sequence"])
-               for name,obj in snapshot.items() if obj.get("source_meta")}
     now=datetime.now(timezone.utc)
     results=[]
-    try:
+    if True:
         async with state.connection() as conn:
             rows=await (await conn.execute("SELECT * FROM global_rules WHERE enabled=1 ORDER BY priority,id")).fetchall()
         for row in rows:
@@ -52,9 +51,6 @@ async def _evaluate_once_unlocked() -> list[dict]:
                 await db.log_event(level="error",event_type="global_rule_error",message=f"{rule['name']}: {exc}",rule_id=None)
                 results.append({"id":rule["id"],"error":str(exc)})
         return results
-    finally:
-        # Only increment a source if its poll sequence is still the one evaluated.
-        await state.mark_sources_checked(sequences)
 
 
 async def loop(stop:asyncio.Event)->None:
