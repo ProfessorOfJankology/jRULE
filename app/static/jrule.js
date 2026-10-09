@@ -543,33 +543,94 @@ function actionArgumentNames(method){
   const args=actionCatalog[method]?.arguments;
   return Array.isArray(args)?args:Object.keys(args||{});
 }
+function actionArgumentMode(raw){
+  if(raw&&typeof raw==='object'&&raw.kind==='parameter'&&raw.expression)return 'parameter';
+  if(raw&&typeof raw==='object'&&raw.kind==='literal'&&typeof raw.value==='string')return 'literal';
+  if(typeof raw==='string'&&/^\{\{\s*[A-Za-z0-9_.-]+\s*\}\}$/.test(raw))return 'parameter';
+  if(raw===null)return 'null';
+  if(typeof raw==='boolean')return 'boolean';
+  if(typeof raw==='number')return 'number';
+  if(typeof raw==='string')return 'string';
+  return 'json';
+}
+function actionArgumentValue(raw,mode){
+  if(mode==='literal')return raw.value;
+  if(mode==='parameter')return raw&&raw.kind==='parameter'?raw.expression:String(raw||'').replace(/^\{\{\s*|\s*\}\}$/g,'');
+  return raw===undefined?'':raw;
+}
+function parseActionArgument(mode,value){
+  switch(mode){
+    case 'string':return value;
+    case 'literal':return {kind:'literal',value:value};
+    case 'number':{
+      if(!value.trim()||!Number.isFinite(Number(value)))throw Error('Number must be finite');
+      return Number(value);
+    }
+    case 'boolean':
+      if(value!=='true'&&value!=='false')throw Error('Boolean must be true or false');
+      return value==='true';
+    case 'null':return null;
+    case 'json':
+      try{return JSON.parse(value)}catch{throw Error('Invalid JSON argument')}
+    default:throw Error('Unknown argument type: '+mode);
+  }
+}
 function renderActionArguments(row,item={}){
   const holder=row.querySelector('.action-arguments');holder.replaceChildren();
   const method=row.querySelector('.action-method').value;
   const existing=item.method===method?(item.arguments||{}):{};
-  const names=actionArgumentNames(method);
-  for(const name of names){
+  for(const name of actionArgumentNames(method)){
     const box=el('div',null,'action-arg');box.dataset.name=name;
     const label=el('label',name);
     const mode=document.createElement('select');mode.className='arg-mode';
-    for(const pair of [['literal','value'],['parameter','parameter']]){const o=document.createElement('option');o.value=pair[0];o.textContent=pair[1];mode.append(o);}
-    const raw=existing[name];
-    const legacy=typeof raw==='string'?raw.match(/^\\{\\{\\s*([A-Za-z0-9_.-]+)\\s*\\}\\}$/):null;
-    const structured=raw&&typeof raw==='object'&&raw.kind==='parameter'&&raw.expression;
-    mode.value=(legacy||structured)?'parameter':'literal';
+    for(const [value,title] of [['string','String'],['number','Number'],['boolean','Boolean'],['null','Null'],['parameter','Parameter'],['literal','Literal (unconverted)'],['json','JSON (advanced)']]){
+      const option=document.createElement('option');option.value=value;option.textContent=title;mode.append(option);
+    }
+    const raw=existing[name],initialMode=raw===undefined?'string':actionArgumentMode(raw);
+    mode.value=initialMode;
     const valueHolder=el('span',null,'arg-value-holder');
-    const draw=()=>{
+    const draw=(value)=>{
       valueHolder.replaceChildren();
       if(mode.value==='parameter'){
-        const expr=structured?raw.expression:(legacy?legacy[1]:'');
-        const editor=expressionEditor(expr);editor.classList.add('arg-expression');valueHolder.append(editor);
+        const editor=expressionEditor(value||'');editor.classList.add('arg-expression');valueHolder.append(editor);
+      }else if(mode.value==='null'){
+        valueHolder.append(el('span','null','muted'));
+      }else if(mode.value==='boolean'){
+        const select=document.createElement('select');select.className='arg-literal';
+        for(const v of ['true','false']){const o=document.createElement('option');o.value=v;o.textContent=v;select.append(o);}
+        select.value=String(value??false);valueHolder.append(select);
       }else{
-        const input=literalInput((legacy||structured)?'':raw,'arg-literal');input.placeholder='Value';valueHolder.append(input);
+        const input=document.createElement('input');input.className='arg-literal';
+        input.value=mode.value==='json'?JSON.stringify(value??null):String(value??'');
+        input.placeholder=mode.value==='literal'?'Exact text, no conversions':'Value';
+        valueHolder.append(input);
       }
+      updateActionPreview();
     };
-    mode.onchange=draw;draw();label.append(mode,valueHolder);box.append(label);holder.append(box);
+    let saved={};
+    const read=()=>{
+      if(mode.value==='parameter')return expressionFromEditor(box.querySelector('.arg-expression'));
+      if(mode.value==='null')return null;
+      return box.querySelector('.arg-literal')?.value??'';
+    };
+    mode.onchange=()=>{
+      const old=mode.dataset.previous||initialMode;
+      const previous=readBeforeSwitch(saved,old);
+      const next=(mode.value==='string'||mode.value==='literal'||mode.value==='number')?String(previous??''):mode.value==='boolean'?'false':mode.value==='json'?previous:'';
+      draw(next);mode.dataset.previous=mode.value;
+    };
+    function readBeforeSwitch(cache,oldMode){
+      return Object.prototype.hasOwnProperty.call(cache,oldMode)?cache[oldMode]:actionArgumentValue(raw,initialMode);
+    }
+    // Preserve each mode's editor contents when switching types.
+    mode.addEventListener('focus',()=>{saved[mode.value]=read();});
+    mode.dataset.previous=initialMode;
+    draw(actionArgumentValue(raw,initialMode));
+    label.append(mode,valueHolder);box.append(label);holder.append(box);
+    box.addEventListener('input',updateActionPreview);
+    box.addEventListener('change',updateActionPreview);
   }
-  if(!names.length)holder.append(el('span','No arguments required','muted'));
+  if(!holder.children.length)holder.append(el('span','No arguments required','muted'));
 }
 function addRuleAction(item={}){
   const row=el('div',null,'action-row');
@@ -579,24 +640,34 @@ function addRuleAction(item={}){
     o.value=name;o.textContent=name+(info.enabled===false?' (disabled)':'');if(name===item.method)o.selected=true;select.append(o);
   }
   const args=el('div',null,'action-arguments');
-  const remove=el('button','Remove');remove.type='button';remove.className='danger';remove.onclick=()=>row.remove();
+  const remove=el('button','Remove');remove.type='button';remove.className='danger';remove.onclick=()=>{row.remove();updateActionPreview();};
   row.append(select,args,remove);$('#rule-action-builder').append(row);
-  select.onchange=()=>renderActionArguments(row,{});
-  renderActionArguments(row,item);
+  select.onchange=()=>{renderActionArguments(row,{});updateActionPreview();};
+  renderActionArguments(row,item);updateActionPreview();
 }
 function actionsFromBuilder(){
   return [...$('#rule-action-builder').children].map(row=>{
     const method=row.querySelector('.action-method').value,argumentsObj={};
     for(const box of row.querySelectorAll('.action-arg')){
       const name=box.dataset.name,mode=box.querySelector('.arg-mode').value;
-      argumentsObj[name]=mode==='parameter'
-        ? {kind:'parameter',expression:expressionFromEditor(box.querySelector('.arg-expression'))}
-        : parseLooseJson(box.querySelector('.arg-literal').value,'');
+      try{
+        argumentsObj[name]=mode==='parameter'
+          ? {kind:'parameter',expression:expressionFromEditor(box.querySelector('.arg-expression'))}
+          :parseActionArgument(mode,box.querySelector('.arg-literal')?.value??'');
+      }catch(err){throw Error(method+' / '+name+': '+err.message)}
     }
     return {method:method,arguments:argumentsObj};
   });
 }
-function renderActionBuilder(items=[]){$('#rule-action-builder').replaceChildren();for(const item of items)addRuleAction(item);}
+function updateActionPreview(){
+  const target=$('#rule-action-preview');
+  if(!target)return;
+  try{
+    const items=actionsFromBuilder();
+    target.textContent=JSON.stringify(items,null,2);
+  }catch(err){target.textContent='Invalid action argument: '+err.message;}
+}
+function renderActionBuilder(items=[]){$('#rule-action-builder').replaceChildren();for(const item of items)addRuleAction(item);updateActionPreview();}
 function syncRawRule(){
   const group=$('#rule-condition-builder > .condition-group');
   const condition=group?conditionFromGroup(group):{kind:'group',logic:'all',items:[]};
