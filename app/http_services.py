@@ -48,7 +48,8 @@ def headers_for(_row=None):
     # or API key appear in SQLite or the browser.
     key_file=os.getenv('JRULE_JAPI_KEY_FILE','/run/jrule/japi-api-key')
     try:
-        value=open(key_file,encoding='utf-8').read().strip()
+        with open(key_file,encoding='utf-8') as stream:
+            value=stream.read().strip()
     except OSError as exc:
         raise RuntimeError('jAPI key unavailable; check jrule.service pre-start hook') from exc
     if not value:
