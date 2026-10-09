@@ -81,6 +81,10 @@ Structured expressions are stored in rule JSON as, for example:
 }
 ```
 
+### Typed rule comparison values
+
+The rule builder's comparison-value dropdown supports String, Number, Boolean, Null, Parameter, Literal (unconverted), and JSON (advanced), matching the action editor's value types. String and Literal use text exactly as entered; quotes are not needed. Parameter resolves a jRULE expression. Explicit values save as `right_type: "typed"` and retain their JSON type during evaluation, so e.g. the string `"00123"` does not become the number `123`. Existing rules without that marker still use the original automatic scalar parsing for compatibility.
+
 ### Recursive collection conditions
 
 The visual rule builder also supports `contains (recursive)` and `does not contain (recursive)`. These search all descendant **values** of dictionaries and lists for an exact match, independent of nesting depth. They do not match dictionary keys or string substrings. Existing `contains` / `does not contain` remain unchanged.
