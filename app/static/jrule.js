@@ -145,7 +145,7 @@ async function refreshSources(){
   renderList('#source-list',sources,o=>openForm('source',o),o=>remove('sources',o.name,refreshSources),async o=>{
     try{
       const v=await api('/api/sources/'+encodeURIComponent(o.name)+'/poll','POST',{});
-      notice('Updated '+v.updated.join(', '));await pool();await refreshSources();
+      notice('Unified cycle completed ('+(v.results?.length??0)+' rule results)');await pool();await refreshSources();
     }catch(e){notice(e.message);await refreshSources();}
   });
 }
