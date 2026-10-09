@@ -81,6 +81,12 @@ Structured expressions are stored in rule JSON as, for example:
 }
 ```
 
+### Recursive collection conditions
+
+The visual rule builder also supports `contains (recursive)` and `does not contain (recursive)`. These search all descendant **values** of dictionaries and lists for an exact match, independent of nesting depth. They do not match dictionary keys or string substrings. Existing `contains` / `does not contain` remain unchanged.
+
+For example, a presence rule can use `current.Presence.workstation_users` with operator `contains_recursive` and literal `"ESMC\\\\jordan.grey"` to detect that user on any reported workstation. For disappearance transitions, compare the current value and previous value with their respective recursive operators. Failed source polls do not update current/previous values.
+
 ## Custom stored variables
 
 jRULE maintains a reserved `variables` object in the same global pool. Variables persist in SQLite and are available to rules as:
