@@ -26,6 +26,9 @@ async def catalog():
 
 def resolve_action_argument(value,context):
     """Resolve structured rule parameters while preserving literal JSON values."""
+    if isinstance(value,dict) and value.get("kind")=="literal" and isinstance(value.get("value"),str):
+        # Raw literal: never parse or interpret template-shaped text.
+        return value["value"]
     if isinstance(value,dict) and value.get("kind")=="parameter" and "expression" in value:
         expr=value["expression"]
         if isinstance(expr,str):
