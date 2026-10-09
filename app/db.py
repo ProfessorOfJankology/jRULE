@@ -37,6 +37,7 @@ async def init_db():
             await conn.execute("ALTER TABLE http_sources ADD COLUMN checks_since_poll INTEGER NOT NULL DEFAULT 0")
         await conn.execute("INSERT OR IGNORE INTO settings(key,value_json) VALUES('rule_interval_seconds','10')")
         await conn.execute("INSERT OR IGNORE INTO settings(key,value_json) VALUES('log_retention_days','1')")
+        await conn.execute("INSERT OR IGNORE INTO settings(key,value_json) VALUES('notice_timeout_seconds','5')")
         await conn.execute("INSERT OR IGNORE INTO objects(name,module,type,config_json,enabled) VALUES('variables','builtin.variables','variables','{}',1)")
         await conn.commit()
     finally: await conn.close()
