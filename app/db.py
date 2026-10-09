@@ -33,8 +33,12 @@ async def init_db():
             await conn.execute("ALTER TABLE http_sources ADD COLUMN discovered_json TEXT NOT NULL DEFAULT '[]'")
         if 'poll_sequence' not in cols:
             await conn.execute("ALTER TABLE http_sources ADD COLUMN poll_sequence INTEGER NOT NULL DEFAULT 0")
-        if 'checks_since_poll' not in cols:
-            await conn.execute("ALTER TABLE http_sources ADD COLUMN checks_since_poll INTEGER NOT NULL DEFAULT 0")
+        # Legacy freshness counter is obsolete under the unified cycle.
+        # SQLite 3.35+ supports DROP COLUMN; older DBs keep an unused column.
+        if 'checks_since_poll' in cols:
+            import sqlite3
+            if sqlite3.sqlite_version_info >= (3,35,0):
+                await conn.execute("ALTER TABLE http_sources DROP COLUMN checks_since_poll")
         await conn.execute("INSERT OR IGNORE INTO settings(key,value_json) VALUES('rule_interval_seconds','10')")
         await conn.execute("INSERT OR IGNORE INTO settings(key,value_json) VALUES('log_retention_days','1')")
         await conn.execute("INSERT OR IGNORE INTO settings(key,value_json) VALUES('notice_timeout_seconds','5')")
