@@ -73,6 +73,14 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
         ]}
         self.assertTrue(evaluate_condition(expr,ctx))
 
+    def test_right_expression_with_transform(self):
+        from app.rules import evaluate_condition
+        condition={'kind':'condition','left':'current.presence.username','operator':'eq',
+                   'right_type':'expression',
+                   'right':{'source':'current.presence.users','transforms':[{'op':'first'}]}}
+        ctx={'current':{'presence':{'username':'jordan.grey','users':['jordan.grey']}}}
+        self.assertTrue(evaluate_condition(condition,ctx))
+
     def test_json_mapping(self):
         data={'ok':True,'workstations':[{'hostname':'ESC-R1','username':'JGRA'}]}
         self.assertEqual(json_path(data,'workstations.0.username'),'JGRA')
