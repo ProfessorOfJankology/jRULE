@@ -28,7 +28,7 @@ def resolve_action_argument(value,context):
     """Resolve structured rule parameters while preserving literal JSON values."""
     if isinstance(value,dict) and value.get("kind")=="literal" and isinstance(value.get("value"),str):
         # Raw literal: never parse or interpret template-shaped text.
-        return value["value"]
+        return value
     if isinstance(value,dict) and value.get("kind")=="parameter" and "expression" in value:
         expr=value["expression"]
         if isinstance(expr,str):
@@ -59,6 +59,16 @@ def resolve_action_argument(value,context):
     return value
 
 
+def unwrap_literal(value):
+    if isinstance(value,dict) and value.get("kind")=="literal" and isinstance(value.get("value"),str):
+        return value["value"]
+    if isinstance(value,list):
+        return [unwrap_literal(item) for item in value]
+    if isinstance(value,dict):
+        return {key:unwrap_literal(item) for key,item in value.items()}
+    return value
+
+
 async def invoke(name,target,arguments,context=None):
     if os.getenv('JRULE_ENABLE_ACTIONS','0')!='1':
         raise PermissionError('Actions disabled (JRULE_ENABLE_ACTIONS=0)')
@@ -68,6 +78,6 @@ async def invoke(name,target,arguments,context=None):
         if not isinstance(resolved_arguments,dict) or 'name' not in resolved_arguments or 'value' not in resolved_arguments:
             raise ValueError('variables.set requires name and value')
         var_name=validate_name(str(resolved_arguments['name']))
-        await state.update_properties('variables',{var_name:resolved_arguments['value']})
+        await state.update_properties('variables',{var_name:unwrap_literal(resolved_arguments['value'])})
         return
     await invoke_action(name,resolved_arguments,context)
