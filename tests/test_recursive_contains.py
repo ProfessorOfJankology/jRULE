@@ -1,6 +1,6 @@
 """Regression coverage for recursive rule conditions."""
 import unittest
-from app.rules import compare, evaluate_condition
+from app.rules import compare
 
 
 class RecursiveContainsTests(unittest.TestCase):
