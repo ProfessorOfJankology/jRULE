@@ -85,14 +85,19 @@ async def _evaluate_once_unlocked(published_sources: set[str] | None = None) -> 
 
 async def loop(stop:asyncio.Event)->None:
     while not stop.is_set():
+        started=asyncio.get_running_loop().time()
         try:
             await evaluate_once()
         except Exception as exc:
             await db.log_event(level="error",event_type="engine_error",message=str(exc))
         settings=await db.get_settings()
         interval=max(1,int(settings.get("rule_interval_seconds",10)))
+        elapsed=asyncio.get_running_loop().time()-started
+        remaining=max(0,interval-elapsed)
+        if not remaining:
+            continue
         try:
-            await asyncio.wait_for(stop.wait(),timeout=interval)
+            await asyncio.wait_for(stop.wait(),timeout=remaining)
         except asyncio.TimeoutError:
             pass
 async def force_run_rule(rule_id: int) -> dict:
