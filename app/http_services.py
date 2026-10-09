@@ -234,6 +234,8 @@ async def invoke_action(name,arguments,context):
     rendered_arguments=render_body(arguments,context)
     values={**context,'args':rendered_arguments}
     payload=render_body(json.loads(row['body_json']),values)
+    from .modules import unwrap_literal
+    payload=unwrap_literal(payload)
     async with httpx.AsyncClient(timeout=row['timeout_seconds'],follow_redirects=False,trust_env=False) as client:
         resp=await client.post(japi_url(row['url']),headers=headers_for(),json=payload)
         if resp.is_error:
