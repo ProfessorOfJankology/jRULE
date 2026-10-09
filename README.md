@@ -32,7 +32,7 @@ Set `JRULE_ADMIN_TOKEN` to a long random secret in `/etc/jrule/jrule.env` and re
 
 ## Unified evaluation cycle
 
-One scheduler runs at the configured **Rule evaluation interval** (default 10 seconds). Each cycle fetches all enabled jAPI GET sources concurrently (10-second request timeout), stages successful results, publishes them in one SQLite transaction, evaluates enabled rules against that snapshot, then invokes matching actions in priority order. Cycles cannot overlap. A new cycle waits for the previous cycle to finish and then the configured delay.
+One scheduler runs at the configured **Rule evaluation interval** (default 10 seconds). Each cycle fetches all enabled jAPI GET sources concurrently (10-second request timeout), stages successful results, publishes them in one SQLite transaction, evaluates enabled rules against that snapshot, then invokes matching actions in priority order. Cycles cannot overlap. The interval is measured from cycle start; if one cycle exceeds the interval, the next starts when it completes.
 
 `previous` is the immediately preceding successful poll value, even when unchanged. Failed source requests retain their stored values and expose an error in source metadata rather than impersonating an offline event. `checks_since_poll` is removed, and per-source interval settings no longer schedule separate polls. Existing rules are **not modified**; remove any references to `checks_since_poll` manually before deploying.
 
