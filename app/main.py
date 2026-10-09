@@ -21,11 +21,25 @@ workers=[]
 async def lifespan(app):
     await db.init_db()
     stop.clear()
-    workers.extend([asyncio.create_task(engine.loop(stop)),asyncio.create_task(http.loop(stop))])
+    workers.extend([asyncio.create_task(engine.loop(stop)),asyncio.create_task(http.loop(stop)),asyncio.create_task(log_cleanup_loop(stop))])
     yield
     stop.set()
     await asyncio.gather(*workers,return_exceptions=True)
     workers.clear()
+async def log_cleanup_loop(stop_event):
+    while not stop_event.is_set():
+        try:
+            settings=await db.get_settings()
+            await db.prune_event_logs(int(settings.get('log_retention_days',1)))
+        except Exception as exc:
+            # Avoid writing a log event for cleanup failures: SQLite may be the problem.
+            import logging
+            logging.getLogger(__name__).exception('Log retention cleanup failed: %s',exc)
+        try:
+            await asyncio.wait_for(stop_event.wait(),timeout=3600)
+        except asyncio.TimeoutError:
+            pass
+
 app=FastAPI(title=APP_NAME,version=APP_VERSION,lifespan=lifespan)
 app.mount('/static',StaticFiles(directory=DIR/'static'),name='static')
 
@@ -77,10 +91,18 @@ async def action_catalog():return await modules.catalog()
 async def settings():return await db.get_settings()
 @app.put('/api/settings')
 async def put_settings(payload:dict[str,Any]):
-    if set(payload)-{'rule_interval_seconds'}:raise HTTPException(400,'Unsupported setting')
-    value=int(payload['rule_interval_seconds'])
-    if not 1<=value<=86400:raise HTTPException(400,'rule_interval_seconds must be 1..86400')
-    await db.set_settings({'rule_interval_seconds':value})
+    if set(payload)-{'rule_interval_seconds','log_retention_days'}:raise HTTPException(400,'Unsupported setting')
+    changes={}
+    if 'rule_interval_seconds' in payload:
+        value=payload['rule_interval_seconds']
+        if type(value) is not int or not 1<=value<=86400:raise HTTPException(400,'rule_interval_seconds must be 1..86400')
+        changes['rule_interval_seconds']=value
+    if 'log_retention_days' in payload:
+        value=payload['log_retention_days']
+        if type(value) is not int or not 1<=value<=365:raise HTTPException(400,'log_retention_days must be 1..365')
+        changes['log_retention_days']=value
+    if not changes:raise HTTPException(400,'No settings provided')
+    await db.set_settings(changes)
     return await db.get_settings()
 
 class SourceIn(BaseModel):
