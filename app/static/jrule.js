@@ -162,6 +162,14 @@ async function duplicateRule(rule){
     notice('Duplicated rule as '+copy.name+' (disabled)');
   }catch(err){notice(err?.message||String(err))}
 }
+async function forceRunRule(rule){
+  if(!confirm('Run saved actions for '+rule.name+' regardless of conditions?'))return;
+  try{
+    const result=await api('/api/global-rules/'+rule.id+'/run','POST');
+    notice('Ran '+result.actions_executed+' actions');
+    await refreshLogs();
+  }catch(err){notice(err.message);}
+}
 async function refreshRules(){
   [rules,ruleParameters]=await Promise.all([api('/api/global-rules'),api('/api/global-variables')]);
   const root=$('#rules-list');root.replaceChildren();
@@ -171,7 +179,8 @@ async function refreshRules(){
     row.append(left);
     const buttons=el('div',null,'buttons');
     for(const [label,fn] of [
-      ['Edit',()=>openRule(rule)],
+      ['Run',()=>forceRunRule(rule)],
+       ['Edit',()=>openRule(rule)],
       ['Duplicate',()=>duplicateRule(rule)],
       ['Delete',()=>remove('global-rules',rule.id,refreshRules)]
     ]){
