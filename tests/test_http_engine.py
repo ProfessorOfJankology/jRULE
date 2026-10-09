@@ -102,6 +102,48 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
         mock.assert_awaited_once()
         self.assertTrue(results[0]['matched'])
 
+    async def test_failed_poll_does_not_replay_stale_transition(self):
+        from app import engine
+        from unittest.mock import AsyncMock
+        await state.register_object('presence','japi.get','japi')
+        await state.register_object('queue','japi.get','japi')
+        async with state.connection() as conn:
+            for name in ('presence','queue'):
+                await conn.execute("""INSERT INTO http_sources
+                    (name,url,interval_seconds,mapping_json,enabled)
+                    VALUES(?,?,?,?,1)""",(name,'/v1/test',30,'{}'))
+            await conn.execute("""INSERT INTO global_rules
+                (name,condition_json,actions_json,enabled)
+                VALUES(?,?,?,1)""",
+                ('presence-login',json.dumps({'kind':'group','logic':'all','items':[
+                    {'kind':'condition','left':'previous.presence.user',
+                        'operator':'ne','right':'aji'},
+                    {'kind':'condition','left':'current.presence.user',
+                        'operator':'eq','right':'aji'}]}),'[]'))
+            await conn.execute("""INSERT INTO global_rules
+                (name,condition_json,actions_json,enabled)
+                VALUES(?,?,?,1)""",
+                ('queue-alive',json.dumps({'kind':'condition','left':'current.queue.ready',
+                    'operator':'eq','right':True}),'[]'))
+            await conn.commit()
+        await state.apply_source_batch([
+            {'name':'presence','properties':{'user':None},'discovered_json':'[]','polled_at':'2026-10-07T08:00:00+00:00'},
+            {'name':'queue','properties':{'ready':True},'discovered_json':'[]','polled_at':'2026-10-07T08:00:00+00:00'},
+        ])
+        await state.apply_source_batch([
+            {'name':'presence','properties':{'user':'aji'},'discovered_json':'[]','polled_at':'2026-10-07T08:01:00+00:00'},
+            {'name':'queue','properties':{'ready':True},'discovered_json':'[]','polled_at':'2026-10-07T08:01:00+00:00'},
+        ])
+        async def queue_only():
+            await state.apply_source_batch([
+                {'name':'queue','properties':{'ready':True},'discovered_json':'[]','polled_at':'2026-10-07T08:02:00+00:00'},
+            ])
+            return [{'name':'queue'}]
+        with patch.object(engine.http_services,'poll_all_sources',new=AsyncMock(side_effect=queue_only)):
+            results=await engine.evaluate_once()
+        self.assertEqual(results[0]['skipped_stale_sources'],['presence'])
+        self.assertTrue(results[1]['matched'])
+
     async def test_cross_object_condition(self):
         await state.register_object('presence','japi.get','japi')
         await state.register_object('queue','japi.get','japi')
