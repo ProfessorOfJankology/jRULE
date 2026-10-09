@@ -167,6 +167,24 @@ def _numeric_pair(a: Any, b: Any) -> tuple[float, float] | None:
         return None
 
 
+def _contains_recursive(value: Any, target: Any) -> bool:
+    """Search nested JSON values (not dictionary keys) for an exact scalar match.
+
+    Strings are treated as whole values, unlike the existing contains operator.
+    Iterative traversal avoids recursion-depth errors on unusually nested data.
+    """
+    pending = [value]
+    while pending:
+        item = pending.pop()
+        if isinstance(item, dict):
+            pending.extend(item.values())
+        elif isinstance(item, (list, tuple)):
+            pending.extend(item)
+        elif item == target and not isinstance(target, (dict, list, tuple)):
+            return True
+    return False
+
+
 def compare(op: str, left: Any, right: Any = None, previous: Any = None) -> bool:
     op = op.lower()
     if op == "exists":
@@ -210,6 +228,10 @@ def compare(op: str, left: Any, right: Any = None, previous: Any = None) -> bool
         except Exception:
             return False
 
+    if op == "contains_recursive":
+        return _contains_recursive(left, right)
+    if op == "not_contains_recursive":
+        return not _contains_recursive(left, right)
     if op == "contains":
         try:
             return right in left
