@@ -3,7 +3,16 @@ const $=s=>document.querySelector(s);
 let sources=[],actions=[],rules=[],variables=[],actionCatalog={},ruleParameters=[],edit={source:null,action:null,rule:null,variable:null};
 
 function el(t,text,cls){const e=document.createElement(t);if(text!==undefined&&text!==null)e.textContent=String(text);if(cls)e.className=cls;return e;}
-function notice(s){$('#notice').textContent=s;$('#notice').classList.add('visible');}
+let noticeTimer=null,noticeTimeoutSeconds=5;
+function dismissNotice(){clearTimeout(noticeTimer);noticeTimer=null;$('#notice').classList.remove('visible');}
+function notice(s){
+  clearTimeout(noticeTimer);
+  const container=$('#notice');container.replaceChildren();
+  container.append(el('span',s));
+  const close=el('button','×','notice-close');close.type='button';close.title='Dismiss notice';close.setAttribute('aria-label','Dismiss notice');close.onclick=dismissNotice;
+  container.append(close);container.classList.add('visible');
+  if(noticeTimeoutSeconds>0)noticeTimer=setTimeout(dismissNotice,noticeTimeoutSeconds*1000);
+}
 async function api(url,method='GET',body){
   const headers={};
   if(method!=='GET'){headers['Content-Type']='application/json';headers['X-JRULE-Admin-Token']=$('#admin-token').value;}
@@ -484,16 +493,20 @@ function renderConditionRight(row,node={}){
     a.placeholder='From';b.placeholder='To';slot.append(a,el('span','and','muted'),b);return;
   }
   const mode=document.createElement('select');mode.className='right-mode';
-  for(const pair of [['literal','value'],['variable','parameter']]){const o=document.createElement('option');o.value=pair[0];o.textContent=pair[1];mode.append(o);}
-  mode.value=node.right_type==='variable'?'variable':'literal';
+  for(const pair of [['literal','value'],['variable','parameter']]){
+    const o=document.createElement('option');o.value=pair[0];o.textContent=pair[1];mode.append(o);
+  }
+  mode.value=['variable','expression'].includes(node.right_type)?'variable':'literal';
   const holder=el('span',null,'right-value-holder');
   const draw=()=>{
     holder.replaceChildren();
     if(mode.value==='variable'){
-      const ps=parameterReferenceEditor(node.right_type==='variable'?String(node.right||''):'');ps.classList.add('right-variable');holder.append(ps);
-    }else holder.append(literalInput(node.right_type==='variable'?'':node.right,'condition-value'));
+      const original=['variable','expression'].includes(node.right_type)?node.right:'';
+      const editor=expressionEditor(original);
+      editor.classList.add('right-expression');holder.append(editor);
+    }else holder.append(literalInput(['variable','expression'].includes(node.right_type)?'':node.right,'condition-value'));
   };
-  mode.onchange=draw;draw();slot.append(mode,holder);
+  mode.onchange=()=>{node={};draw();};draw();slot.append(mode,holder);
 }
 function addCondition(group,node={}){
   const row=el('div',null,'condition-row');row.dataset.kind='condition';
@@ -534,7 +547,7 @@ function conditionFromRow(row){
     out.right=[parseLooseJson(row.querySelector('.range-a').value,''),parseLooseJson(row.querySelector('.range-b').value,'')];return out;
   }
   const mode=row.querySelector('.right-mode').value;
-  if(mode==='variable'){out.right_type='variable';out.right=parameterReferenceValue(row.querySelector('.right-variable'));}
+  if(mode==='variable'){out.right_type='expression';out.right=expressionFromEditor(row.querySelector('.right-expression'));}
   else out.right=parseLooseJson(row.querySelector('.condition-value').value,'');
   return out;
 }
@@ -790,7 +803,7 @@ $('#log-filter').onchange=()=>refreshLogs().catch(e=>notice(e.message));
 $('#log-limit').onchange=()=>refreshLogs().catch(e=>notice(e.message));
 $('#settings-form').onsubmit=async e=>{
   e.preventDefault();
-  try{await api('/api/settings','PUT',{rule_interval_seconds:Number(e.target.elements.rule_interval_seconds.value),log_retention_days:Number(e.target.elements.log_retention_days.value)});notice('Settings saved');}
+  try{const saved=await api('/api/settings','PUT',{rule_interval_seconds:Number(e.target.elements.rule_interval_seconds.value),log_retention_days:Number(e.target.elements.log_retention_days.value),notice_timeout_seconds:Number(e.target.elements.notice_timeout_seconds.value)});noticeTimeoutSeconds=saved.notice_timeout_seconds;notice('Settings saved');}
   catch(err){notice(err.message)}
 };
 $('#refresh').onclick=()=>Promise.all([pool(),refreshSources(),refreshVariables(),refreshActions(),refreshRules(),refreshLogs()]).catch(e=>notice(e.message));
@@ -802,5 +815,7 @@ $('#refresh').onclick=()=>Promise.all([pool(),refreshSources(),refreshVariables(
     const settings=await api('/api/settings');
     $('#settings-form').elements.rule_interval_seconds.value=settings.rule_interval_seconds;
     $('#settings-form').elements.log_retention_days.value=settings.log_retention_days??1;
+    noticeTimeoutSeconds=settings.notice_timeout_seconds??5;
+    $('#settings-form').elements.notice_timeout_seconds.value=noticeTimeoutSeconds;
   }catch(e){notice(e.message)}
 })();
