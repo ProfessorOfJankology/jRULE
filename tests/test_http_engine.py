@@ -149,6 +149,28 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
             )
         )
 
+    async def test_force_run_ignores_conditions_and_cooldown(self):
+        from app import engine
+        async with state.connection() as conn:
+            await conn.execute("""INSERT INTO global_rules
+                (name,enabled,condition_json,actions_json,cooldown_seconds,last_write_at)
+                VALUES(?,?,?,?,?,?)""",
+                ('manual-test',0,json.dumps({'kind':'condition','left':'current.variables.x','operator':'eq','right':999}),
+                 json.dumps([{'method':'variables.set','arguments':{'name':'forced','value':True}}]),
+                 3600,db.utc_now()))
+            await conn.commit()
+            row=await (await conn.execute("SELECT id FROM global_rules WHERE name='manual-test'")).fetchone()
+        with patch.dict(os.environ,{'JRULE_ENABLE_ACTIONS':'1'}):
+            result=await engine.force_run_rule(row['id'])
+        self.assertEqual(result['actions_executed'],1)
+        self.assertTrue((await state.pool())['variables']['properties']['forced']['current'])
+
+    def test_action_argument_types(self):
+        self.assertEqual(modules.resolve_action_argument('103',{}),'103')
+        self.assertEqual(modules.resolve_action_argument(103,{}),103)
+        self.assertIsNone(modules.resolve_action_argument(None,{}))
+        self.assertEqual(modules.resolve_action_argument({'kind':'literal','value':'103'},{}),'103')
+
     def test_endpoint_is_japi_only(self):
         self.assertEqual(validate_endpoint('/v1/mdserver/sessions'),'/v1/mdserver/sessions')
         self.assertEqual(validate_endpoint('/v1/mdserver/workstations?include_users=true'),'/v1/mdserver/workstations?include_users=true')
