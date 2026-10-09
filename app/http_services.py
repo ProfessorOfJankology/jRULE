@@ -184,10 +184,13 @@ async def poll_source(name):
         row=await (await conn.execute('SELECT s.* FROM http_sources s JOIN objects o ON o.name=s.name WHERE s.name=? AND s.enabled=1 AND o.enabled=1',(name,))).fetchone()
     if not row:raise ValueError(f'Unknown or disabled source: {name}')
     now=db.utc_now()
+    started=asyncio.get_running_loop().time()
+    status_code=None
     try:
         # No redirects, so a misconfigured service cannot redirect to an unexpected host.
         async with httpx.AsyncClient(timeout=10,follow_redirects=False,trust_env=False) as client:
             resp=await client.get(japi_url(row['url']),headers=headers_for())
+            status_code=resp.status_code
             resp.raise_for_status()
             if len(resp.content)>1048576:raise ValueError('Source response exceeds 1 MiB')
             payload=resp.json()
@@ -197,12 +200,25 @@ async def poll_source(name):
             previous_discovered=json.loads(row['discovered_json'] or '[]')
             discovered=merge_discovered_fields(previous_discovered,observed,now)
         sequence=await state.apply_source_poll(name,props,json.dumps(discovered,default=str),now)
+        elapsed_ms=round((asyncio.get_running_loop().time()-started)*1000)
+        await db.log_event(
+            level='info',event_type='source_poll',
+            message=f"{name}: poll succeeded (HTTP {status_code}, {elapsed_ms} ms, sequence {sequence})",
+            details={'source':name,'endpoint':row['url'],'started_at':now,
+                     'duration_ms':elapsed_ms,'http_status':status_code,
+                     'poll_sequence':sequence,'response':payload}
+        )
         return {'name':name,'updated':list(props),'poll_sequence':sequence}
     except Exception as exc:
         async with state.connection() as conn:
             await conn.execute('UPDATE http_sources SET last_attempt=?,last_error=? WHERE name=?',(now,str(exc)[:500],name))
             await conn.commit()
-        await db.log_event(level='error',event_type='source_poll_error',message=f'{name}: {exc}')
+        elapsed_ms=round((asyncio.get_running_loop().time()-started)*1000)
+        await db.log_event(
+            level='error',event_type='source_poll_error',message=f'{name}: {exc}',
+            details={'source':name,'endpoint':row['url'],'started_at':now,
+                     'duration_ms':elapsed_ms,'http_status':status_code,'error':str(exc)}
+        )
         raise
 
 _EXACT_TEMPLATE=re.compile(r'^\{\{\s*([A-Za-z0-9_.-]+)\s*\}\}$')
