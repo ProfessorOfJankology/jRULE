@@ -716,6 +716,7 @@ async function saveRule(e){
 
 function logCategory(event){
   const type=String(event.event_type||'');
+  if(type.startsWith('source_'))return 'sources';
   if(String(event.level||'').toLowerCase()==='error')return 'errors';
   if(type.includes('rule')||type.includes('engine'))return 'rules';
   if(type.includes('action')||type.includes('http_action'))return 'actions';
@@ -730,7 +731,7 @@ function formatLogTime(value){
 async function refreshLogs(){
   const limit=Number($('#log-limit')?.value||100);
   const filter=$('#log-filter')?.value||'all';
-  const events=await api('/api/events?limit='+encodeURIComponent(limit));
+  const events=await api('/api/events?limit='+encodeURIComponent(limit)+'&category='+encodeURIComponent(filter));
   const body=$('#log-body');body.replaceChildren();
   let shown=0;
   for(const event of events){
@@ -745,7 +746,7 @@ async function refreshLogs(){
     }
     if(details!==null){
       const expander=document.createElement('details');expander.className='log-details';
-      const summary=document.createElement('summary');summary.textContent='Details';
+      const summary=document.createElement('summary');summary.textContent=event.event_type==='source_poll'?'Returned JSON / poll details':'Details';
       const pre=document.createElement('pre');
       pre.textContent=typeof details==='string'?details:JSON.stringify(details,null,2);
       expander.append(summary,pre);messageTd.append(expander);
