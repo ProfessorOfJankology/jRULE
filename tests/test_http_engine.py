@@ -37,28 +37,45 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
         await state.update_properties('presence',{'user':'JGRA'})
         self.assertEqual((await state.pool())['presence']['properties']['user']['last'],'JGRA')
 
-    async def test_source_checks_since_poll_generation_guard(self):
+    async def test_unified_batch_advances_previous_once_per_cycle(self):
+        await state.register_object('presence','japi.get','japi')
+        await state.register_object('queue','japi.get','japi')
+        async with state.connection() as conn:
+            for name in ('presence','queue'):
+                await conn.execute("""INSERT INTO http_sources
+                    (name,url,interval_seconds,mapping_json,enabled)
+                    VALUES(?,?,?,?,1)""",(name,'/v1/test',30,'{}'))
+            await conn.commit()
+        def poll(name, value, at):
+            return {'name':name,'properties':{'online':value},
+                    'discovered_json':'[]','polled_at':at}
+        await state.apply_source_batch([
+            poll('presence',False,'2026-10-07T08:00:00+00:00'),
+            poll('queue',1,'2026-10-07T08:00:00+00:00')])
+        await state.apply_source_batch([
+            poll('presence',True,'2026-10-07T08:01:00+00:00'),
+            poll('queue',1,'2026-10-07T08:01:00+00:00')])
+        snap=await state.pool()
+        self.assertIs(snap['presence']['properties']['online']['last'],False)
+        self.assertIs(snap['presence']['properties']['online']['current'],True)
+        self.assertEqual(snap['queue']['properties']['online']['last'],1)
+        self.assertEqual(snap['queue']['properties']['online']['current'],1)
+        self.assertNotIn('checks_since_poll',snap['presence']['source_meta'])
+
+    async def test_failed_source_retains_previous_snapshot(self):
         await state.register_object('presence','japi.get','japi')
         async with state.connection() as conn:
             await conn.execute("""INSERT INTO http_sources
                 (name,url,interval_seconds,mapping_json,enabled)
                 VALUES(?,?,?,?,1)""",('presence','/v1/test',30,'{}'))
             await conn.commit()
-        seq1=await state.apply_source_poll('presence',{'count':1},'[]','2026-10-07T08:00:00+00:00')
-        snap=await state.pool()
-        self.assertEqual(snap['presence']['source_meta']['checks_since_poll'],0)
-        await state.mark_sources_checked({'presence':seq1})
-        self.assertEqual((await state.pool())['presence']['source_meta']['checks_since_poll'],1)
-
-        seq2=await state.apply_source_poll('presence',{'count':2},'[]','2026-10-07T08:01:00+00:00')
-        self.assertGreater(seq2,seq1)
-        self.assertEqual((await state.pool())['presence']['source_meta']['checks_since_poll'],0)
-
-        # A stale evaluator from seq1 must not mark the newer poll as checked.
-        await state.mark_sources_checked({'presence':seq1})
-        self.assertEqual((await state.pool())['presence']['source_meta']['checks_since_poll'],0)
-        await state.mark_sources_checked({'presence':seq2})
-        self.assertEqual((await state.pool())['presence']['source_meta']['checks_since_poll'],1)
+        await state.apply_source_batch([{
+            'name':'presence','properties':{'online':True},
+            'discovered_json':'[]','polled_at':'2026-10-07T08:00:00+00:00'}])
+        before=await state.pool()
+        await state.apply_source_batch([])
+        after=await state.pool()
+        self.assertEqual(after['presence']['properties'],before['presence']['properties'])
 
     async def test_cross_object_condition(self):
         await state.register_object('presence','japi.get','japi')
