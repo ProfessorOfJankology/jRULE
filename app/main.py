@@ -91,7 +91,7 @@ async def action_catalog():return await modules.catalog()
 async def settings():return await db.get_settings()
 @app.put('/api/settings')
 async def put_settings(payload:dict[str,Any]):
-    if set(payload)-{'rule_interval_seconds','log_retention_days'}:raise HTTPException(400,'Unsupported setting')
+    if set(payload)-{'rule_interval_seconds','log_retention_days','notice_timeout_seconds'}:raise HTTPException(400,'Unsupported setting')
     changes={}
     if 'rule_interval_seconds' in payload:
         value=payload['rule_interval_seconds']
@@ -101,6 +101,10 @@ async def put_settings(payload:dict[str,Any]):
         value=payload['log_retention_days']
         if type(value) is not int or not 1<=value<=365:raise HTTPException(400,'log_retention_days must be 1..365')
         changes['log_retention_days']=value
+    if 'notice_timeout_seconds' in payload:
+        value=payload['notice_timeout_seconds']
+        if type(value) is not int or not 0<=value<=300:raise HTTPException(400,'notice_timeout_seconds must be 0..300')
+        changes['notice_timeout_seconds']=value
     if not changes:raise HTTPException(400,'No settings provided')
     await db.set_settings(changes)
     return await db.get_settings()
