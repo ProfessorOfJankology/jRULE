@@ -309,6 +309,8 @@ def compare(op: str, left: Any, right: Any = None, previous: Any = None) -> bool
 def resolve_operand(condition: dict[str, Any], ctx: dict[str, Any]) -> Any:
     if condition.get("right_type") in {"variable","expression"}:
         return resolve_expression(condition.get("right"),ctx)
+    if condition.get("right_type") == "typed":
+        return condition.get("right")
     return parse_scalar(condition.get("right"))
 
 
