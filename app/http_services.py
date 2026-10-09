@@ -180,7 +180,7 @@ def merge_discovered_fields(previous,current,seen_at,limit=1000):
     values.sort(key=lambda x:(not x.get('present',False),x.get('path','').lower()))
     return values[:limit]
 
-async def poll_source(name):
+async def poll_source(name, *, stage=False):
     async with state.connection() as conn:
         row=await (await conn.execute('SELECT s.* FROM http_sources s JOIN objects o ON o.name=s.name WHERE s.name=? AND s.enabled=1 AND o.enabled=1',(name,))).fetchone()
     if not row:raise ValueError(f'Unknown or disabled source: {name}')
@@ -200,7 +200,10 @@ async def poll_source(name):
             observed=discover_fields(payload)
             previous_discovered=json.loads(row['discovered_json'] or '[]')
             discovered=merge_discovered_fields(previous_discovered,observed,now)
-        sequence=await state.apply_source_poll(name,props,json.dumps(discovered,default=str),now)
+        prepared={'name':name,'properties':props,'discovered_json':json.dumps(discovered,default=str),'polled_at':now}
+        if stage:
+            return prepared
+        sequence=await state.apply_source_poll(name,props,prepared['discovered_json'],now)
         elapsed_ms=round((asyncio.get_running_loop().time()-started)*1000)
         await db.log_event(
             level='info',event_type='source_poll',
@@ -276,20 +279,26 @@ async def invoke_action(name,arguments,context):
         },
     )
 
-async def loop(stop):
-    due={}
-    while not stop.is_set():
-        async with state.connection() as conn:
-            rows=await (await conn.execute('SELECT s.name,s.interval_seconds FROM http_sources s JOIN objects o ON s.name=o.name WHERE s.enabled=1 AND o.enabled=1')).fetchall()
-        now=asyncio.get_running_loop().time()
-        active={r['name'] for r in rows}
-        for name in list(due):
-            if name not in active:due.pop(name,None)
-        for row in rows:
-            name=row['name']
-            if now>=due.get(name,0):
-                due[name]=now+max(5,int(row['interval_seconds']))
-                try:await poll_source(name)
-                except Exception:pass
-        try:await asyncio.wait_for(stop.wait(),timeout=1)
-        except asyncio.TimeoutError:pass
+async def poll_all_sources() -> list[dict]:
+    """Fetch all enabled sources concurrently, stage values, then publish together."""
+    async with state.connection() as conn:
+        rows=await (await conn.execute("""
+            SELECT s.name FROM http_sources s JOIN objects o ON o.name=s.name
+            WHERE s.enabled=1 AND o.enabled=1 ORDER BY s.name
+        """)).fetchall()
+    results=await asyncio.gather(
+        *(poll_source(row["name"],stage=True) for row in rows),
+        return_exceptions=True,
+    )
+    ready=[]
+    for row,result in zip(rows,results):
+        if isinstance(result,BaseException):
+            # poll_source has already logged the error and preserved source values.
+            continue
+        ready.append(result)
+    await state.apply_source_batch(ready)
+    for result in ready:
+        await db.log_event(level="info",event_type="source_poll",
+            message=f"{result['name']}: published in unified cycle",
+            details={"source":result["name"],"polled_at":result["polled_at"]})
+    return ready
