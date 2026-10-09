@@ -77,6 +77,31 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
         after=await state.pool()
         self.assertEqual(after['presence']['properties'],before['presence']['properties'])
 
+    async def test_rule_evaluation_polls_before_reading_snapshot(self):
+        from app import engine
+        from unittest.mock import AsyncMock
+        await state.register_object('presence','japi.get','japi')
+        async with state.connection() as conn:
+            await conn.execute("""INSERT INTO http_sources
+                (name,url,interval_seconds,mapping_json,enabled)
+                VALUES(?,?,?,?,1)""",('presence','/v1/test',30,'{}'))
+            await conn.execute("""INSERT INTO global_rules
+                (name,condition_json,actions_json,enabled)
+                VALUES(?,?,?,1)""",
+                ('login',json.dumps({'kind':'condition','left':'current.presence.user',
+                    'operator':'eq','right':'aji'}),'[]'))
+            await conn.commit()
+
+        async def poll_first():
+            await state.apply_source_batch([{
+                'name':'presence','properties':{'user':'aji'},
+                'discovered_json':'[]','polled_at':'2026-10-07T08:00:00+00:00'}])
+            return []
+        with patch.object(engine.http_services,'poll_all_sources',new=AsyncMock(side_effect=poll_first)) as mock:
+            results=await engine.evaluate_once()
+        mock.assert_awaited_once()
+        self.assertTrue(results[0]['matched'])
+
     async def test_cross_object_condition(self):
         await state.register_object('presence','japi.get','japi')
         await state.register_object('queue','japi.get','japi')
