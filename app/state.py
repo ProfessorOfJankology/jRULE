@@ -81,24 +81,46 @@ async def apply_source_poll(name: str, changes: dict[str, Any], discovered_json:
                 (name,key,current,last,polled_at,changed_at))
         await conn.execute("""UPDATE http_sources
             SET last_attempt=?,last_success=?,last_error=NULL,discovered_json=?,
-                poll_sequence=poll_sequence+1,checks_since_poll=0
+                poll_sequence=poll_sequence+1
             WHERE name=?""",(polled_at,polled_at,discovered_json,name))
         row=await (await conn.execute("SELECT poll_sequence FROM http_sources WHERE name=?",(name,))).fetchone()
         await conn.commit()
         return int(row["poll_sequence"])
 
 
-async def mark_sources_checked(sequences: dict[str,int]) -> None:
-    """Increment checks_since_poll only if no newer poll replaced the snapshot."""
-    if not sequences:
+async def apply_source_batch(results: list[dict]) -> None:
+    """Publish all successful source results in one SQLite transaction."""
+    if not results:
         return
     async with connection() as conn:
         await conn.execute("BEGIN IMMEDIATE")
-        for name,sequence in sequences.items():
-            await conn.execute("""UPDATE http_sources
-                SET checks_since_poll=checks_since_poll+1
-                WHERE name=? AND poll_sequence=?""",(name,int(sequence)))
-        await conn.commit()
+        try:
+            for result in results:
+                name=result["name"]
+                at=result["polled_at"]
+                for key,value in result["properties"].items():
+                    if not key or "." in key:
+                        raise ValueError(f"Invalid property: {key!r}")
+                    current=json.dumps(value,default=str)
+                    old=await (await conn.execute(
+                        "SELECT current_json,last_changed FROM object_properties WHERE object_name=? AND property_name=?",
+                        (name,key))).fetchone()
+                    previous=old["current_json"] if old else None
+                    changed=at if old is None or previous!=current else old["last_changed"]
+                    await conn.execute("""INSERT INTO object_properties
+                        (object_name,property_name,current_json,last_json,last_polled,last_changed)
+                        VALUES(?,?,?,?,?,?) ON CONFLICT(object_name,property_name) DO UPDATE SET
+                        last_json=excluded.last_json,current_json=excluded.current_json,
+                        last_polled=excluded.last_polled,last_changed=excluded.last_changed""",
+                        (name,key,current,previous,at,changed))
+                await conn.execute("""UPDATE http_sources SET
+                    last_attempt=?,last_success=?,last_error=NULL,discovered_json=?,
+                    poll_sequence=poll_sequence+1 WHERE name=?""",
+                    (at,at,result["discovered_json"],name))
+            await conn.commit()
+        except Exception:
+            await conn.rollback()
+            raise
 
 
 async def pool() -> dict[str,Any]:
@@ -107,12 +129,12 @@ async def pool() -> dict[str,Any]:
         await conn.execute("BEGIN")
         objects = await (await conn.execute("SELECT name,module,type,enabled FROM objects ORDER BY name")).fetchall()
         properties = await (await conn.execute("SELECT * FROM object_properties")).fetchall()
-        sources = await (await conn.execute("SELECT name,poll_sequence,checks_since_poll,last_success FROM http_sources")).fetchall()
+        sources = await (await conn.execute("SELECT name,poll_sequence,last_success,last_error FROM http_sources")).fetchall()
         await conn.commit()
     source_meta={row["name"]:{
         "poll_sequence":int(row["poll_sequence"]),
-        "checks_since_poll":int(row["checks_since_poll"]),
-        "last_poll":row["last_success"]
+        "last_poll":row["last_success"],
+        "last_error":row["last_error"]
     } for row in sources}
     output = {row["name"]:{"module":row["module"],"type":row["type"],"enabled":bool(row["enabled"]),"properties":{},"source_meta":source_meta.get(row["name"])} for row in objects}
     for row in properties:
