@@ -202,6 +202,21 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([row['event_type'] for row in rows],['source_poll','source_poll_error'])
         self.assertEqual(json.loads(rows[0]['details_json'])['response']['workstation_users']['ESC-R1'],['jordan.grey'])
 
+    async def test_log_retention_prunes_only_expired_events(self):
+        from datetime import datetime,timezone,timedelta
+        old=(datetime.now(timezone.utc)-timedelta(days=2)).isoformat()
+        now=db.utc_now()
+        async with state.connection() as conn:
+            await conn.execute("INSERT INTO event_log(created_at,level,event_type,message) VALUES(?,?,?,?)",(old,'info','source_poll','old'))
+            await conn.execute("INSERT INTO event_log(created_at,level,event_type,message) VALUES(?,?,?,?)",(now,'info','source_poll','recent'))
+            await conn.commit()
+        self.assertEqual(await db.prune_event_logs(1),1)
+        async with state.connection() as conn:
+            rows=await (await conn.execute('SELECT message FROM event_log')).fetchall()
+        self.assertEqual([r['message'] for r in rows],['recent'])
+        with self.assertRaises(ValueError):
+            await db.prune_event_logs(0)
+
     def test_japi_url_uses_server_side_base(self):
         from app.http_services import japi_url
         with patch.dict(os.environ,{'JRULE_JAPI_BASE_URL':'http://127.0.0.1:8088'}):
