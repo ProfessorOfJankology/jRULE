@@ -312,6 +312,13 @@ async def delete_rule(id:int):
         if cur.rowcount==0:raise HTTPException(404,'Unknown rule')
         await conn.commit()
     return {'ok':True}
+@app.post('/api/global-rules/{id}/run')
+async def run_rule_now(id:int):
+    try:return await engine.force_run_rule(id)
+    except KeyError as exc:raise HTTPException(404,str(exc)) from exc
+    except PermissionError as exc:raise HTTPException(403,str(exc)) from exc
+    except Exception as exc:raise HTTPException(502,str(exc)) from exc
+
 @app.post('/api/global-rules/evaluate')
 async def evaluate_now():return await engine.evaluate_once()
 @app.get('/api/events')
