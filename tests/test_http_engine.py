@@ -96,7 +96,7 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
             await state.apply_source_batch([{
                 'name':'presence','properties':{'user':'aji'},
                 'discovered_json':'[]','polled_at':'2026-10-07T08:00:00+00:00'}])
-            return []
+            return [{'name':'presence'}]
         with patch.object(engine.http_services,'poll_all_sources',new=AsyncMock(side_effect=poll_first)) as mock:
             results=await engine.evaluate_once()
         mock.assert_awaited_once()
