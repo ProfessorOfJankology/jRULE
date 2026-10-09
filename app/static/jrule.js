@@ -790,7 +790,7 @@ $('#log-filter').onchange=()=>refreshLogs().catch(e=>notice(e.message));
 $('#log-limit').onchange=()=>refreshLogs().catch(e=>notice(e.message));
 $('#settings-form').onsubmit=async e=>{
   e.preventDefault();
-  try{await api('/api/settings','PUT',{rule_interval_seconds:Number(e.target.elements.rule_interval_seconds.value)});notice('Settings saved');}
+  try{await api('/api/settings','PUT',{rule_interval_seconds:Number(e.target.elements.rule_interval_seconds.value),log_retention_days:Number(e.target.elements.log_retention_days.value)});notice('Settings saved');}
   catch(err){notice(err.message)}
 };
 $('#refresh').onclick=()=>Promise.all([pool(),refreshSources(),refreshVariables(),refreshActions(),refreshRules(),refreshLogs()]).catch(e=>notice(e.message));
@@ -799,6 +799,8 @@ $('#refresh').onclick=()=>Promise.all([pool(),refreshSources(),refreshVariables(
   switchTab();
   try{
     await Promise.all([pool(),refreshSources(),refreshVariables(),refreshActions(),refreshRules(),refreshLogs()]);
-    $('#settings-form').elements.rule_interval_seconds.value=(await api('/api/settings')).rule_interval_seconds;
+    const settings=await api('/api/settings');
+    $('#settings-form').elements.rule_interval_seconds.value=settings.rule_interval_seconds;
+    $('#settings-form').elements.log_retention_days.value=settings.log_retention_days??1;
   }catch(e){notice(e.message)}
 })();
