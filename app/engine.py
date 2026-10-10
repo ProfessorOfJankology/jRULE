@@ -4,7 +4,7 @@ import asyncio
 import json
 import os
 from datetime import datetime,timezone
-from . import db, state, modules, http_services
+from . import db, state, modules, http_services, datetime_source
 from .rules import evaluate_condition
 
 evaluation_lock = asyncio.Lock()
@@ -14,6 +14,7 @@ async def evaluate_once() -> list[dict]:
     """Serialise manual and scheduled runs: never execute one rule twice concurrently."""
     async with evaluation_lock:
         published=await http_services.poll_all_sources()
+        await datetime_source.poll_datetime()
         return await _evaluate_once_unlocked({entry['name'] for entry in published})
 
 
