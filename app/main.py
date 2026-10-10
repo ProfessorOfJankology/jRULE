@@ -83,7 +83,7 @@ async def variables():
             values.add(f"previous.{row['name']}.{path}")
     return sorted(values)
 @app.get('/api/modules/sources')
-async def source_catalog():return {'japi.get':{'kind':'poll','object_types':['japi'],'supports_mapping':True,'supports_query':True,'supports_derived_fields':True}}
+async def source_catalog():return {'japi.get':{'kind':'poll','object_types':['japi'],'supports_mapping':True,'supports_query':True,'supports_derived_fields':True},'builtin.datetime':{'kind':'builtin','object_types':['datetime'],'timezone':'Australia/Melbourne'}}
 @app.get('/api/modules/actions')
 async def action_catalog():return await modules.catalog()
 @app.get('/api/settings')
