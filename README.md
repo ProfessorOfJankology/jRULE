@@ -38,6 +38,18 @@ One scheduler runs at the configured **Rule evaluation interval** (default 10 se
 
 Manual "Poll" and "Evaluate" controls execute a full unified cycle and may run enabled actions when `JRULE_ENABLE_ACTIONS=1`. The separate "Force run" action still executes saved actions regardless of their condition and cooldown.
 
+## Built-in DateTime source
+
+The `DateTime` object is automatically created on database initialization and updates once during every unified cycle, after jAPI GET polls and before rule evaluation. It requires **no endpoint or individual polling interval**. Calendar values use the IANA timezone `Australia/Melbourne`, including daylight-saving transitions.
+
+Use `current.DateTime.<property>`, `previous.DateTime.<property>`, and `meta.DateTime.<property>.last_changed` in the rule builder. Available properties:
+
+- Date and time: `datetime` (ISO 8601 with offset), `date` (YYYY-MM-DD), `time` (HH:MM:SS), `timezone`, `utc_offset`, `unix_timestamp`.
+- Calendar components: `year`, `month`, `month_name`, `day`, `hour`, `minute`, `second`, `quarter`, `day_of_year`.
+- Day and week: `day_of_week` (ISO Monday=1 through Sunday=7), `weekday_name` (e.g. Saturday), `week_number` (ISO 8601), `is_weekday`, `is_weekend` (booleans).
+
+For example `current.DateTime.is_weekend` is true on Saturday and Sunday. Rules can compare `current.DateTime.hour` as a Number, or combine hour and minute using `current.DateTime.time` as an HH:MM:SS string. Values are sampled once per cycle; a sufficiently long cycle cannot detect a short event that takes place entirely between samples.
+
 ## Configure a source
 
 - Name: `presence`
