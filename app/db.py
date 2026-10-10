@@ -43,6 +43,7 @@ async def init_db():
         await conn.execute("INSERT OR IGNORE INTO settings(key,value_json) VALUES('log_retention_days','1')")
         await conn.execute("INSERT OR IGNORE INTO settings(key,value_json) VALUES('notice_timeout_seconds','5')")
         await conn.execute("INSERT OR IGNORE INTO objects(name,module,type,config_json,enabled) VALUES('variables','builtin.variables','variables','{}',1)")
+        await conn.execute("INSERT OR IGNORE INTO objects(name,module,type,config_json,enabled) VALUES('DateTime','builtin.datetime','datetime','{}',1)")
         await conn.commit()
     finally: await conn.close()
 async def get_settings():
