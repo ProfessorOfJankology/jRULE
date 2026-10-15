@@ -39,3 +39,17 @@
 .condition-right .right-expression .parameter-reference{min-width:0}
 #notice.visible{display:flex;align-items:center;justify-content:space-between;gap:16px}
 #notice .notice-close{flex:none;padding:2px 8px;font-size:18px;line-height:1.2}
+
+
+/* jAPI action POST-body builder. */
+.action-body-heading{align-items:flex-end}
+.action-body-heading h4{margin:0 0 4px}
+#action-body-builder{display:flex;flex-direction:column;gap:8px;margin:8px 0 18px}
+.action-body-param{display:grid;grid-template-columns:minmax(150px,1fr) 145px 145px minmax(200px,2fr) auto;gap:10px;align-items:end;background:#172a35;border:1px solid #304754;border-radius:8px;padding:10px}
+.action-body-param label{margin:0}
+.action-body-param input,.action-body-param select{margin:5px 0 0}
+.action-body-param .body-value-holder{min-width:0}
+.action-body-param .body-value-holder input,.action-body-param .body-value-holder select{width:100%}
+.action-body-param .body-argument-hint{font-size:11px;color:#8eabba;margin-top:4px}
+.action-body-empty{padding:10px 0;color:#8eabba}
+@media(max-width:850px){.action-body-param{grid-template-columns:1fr}.action-body-param>.danger{justify-self:end}}
