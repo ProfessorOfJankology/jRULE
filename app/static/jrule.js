@@ -268,7 +268,7 @@ function openForm(type,obj){
   const form=$('#'+type+'-form');form.reset();
   for(const input of form.elements){
     if(!input.name)continue;
-    if(input.name==='mapping'||input.name==='body')input.value=JSON.stringify(obj?.[input.name]||{},null,2);
+    if(input.name==='mapping'||input.name==='body'||input.name==='optional_arguments')input.value=JSON.stringify(obj?.[input.name]||(input.name==='optional_arguments'?[]:{}),null,2);
     else if(input.type==='checkbox')input.checked=obj?!!obj[input.name]:(type==='source');
     else if(obj && Object.hasOwn(obj,input.name))input.value=obj[input.name];
   }
@@ -282,11 +282,11 @@ async function saveForm(type,e){
     const data={};
     for(const field of e.target.elements){
       if(!field.name)continue;
-      if(field.name==='mapping'||field.name==='body'){
+      if(field.name==='mapping'||field.name==='body'||field.name==='optional_arguments'){
         const raw=field.value.trim();
-        try{data[field.name]=raw?JSON.parse(raw):{};}
+        try{data[field.name]=raw?JSON.parse(raw):(field.name==='optional_arguments'?[]:{});}
         catch(parseError){
-          const label=field.name==='body'?'POST body':'Property mapping';
+          const label=field.name==='body'?'POST body':field.name==='optional_arguments'?'Optional arguments':'Property mapping';
           throw new Error(label+' must be valid JSON: '+parseError.message);
         }
       }else if(field.type==='checkbox')data[field.name]=field.checked;
@@ -719,7 +719,6 @@ function renderActionArguments(row,item={}){
     }
     box.addEventListener('input',updateActionPreview);
     box.addEventListener('change',updateActionPreview);
-  }
   }
   for(const name of actionArgumentNames(method))renderOne(name);
   for(const name of optionalNames){if(Object.prototype.hasOwnProperty.call(existing,name))renderOne(name);}
