@@ -254,6 +254,7 @@ class ActionIn(BaseModel):
     name:str
     url:str
     body:Any=Field(default_factory=dict)
+    optional_arguments:list[str]=Field(default_factory=list)
     enabled:bool=False
     timeout_seconds:float=10
 
@@ -263,18 +264,22 @@ def validate_action(payload:ActionIn):
         http.validate_endpoint(payload.url)
         if not .5<=payload.timeout_seconds<=60:raise ValueError('Timeout must be 0.5..60 seconds')
         if len(json.dumps(payload.body))>65536:raise ValueError('POST body exceeds 64 KiB')
+        if not isinstance(payload.body,dict):raise ValueError('Action body must be a JSON object')
+        valid=set(__import__('re').findall(r'\{\{\s*args\.([A-Za-z][A-Za-z0-9_-]*)\s*\}\}',json.dumps(payload.body)))
+        if len(set(payload.optional_arguments))!=len(payload.optional_arguments) or not set(payload.optional_arguments)<=valid:
+            raise ValueError('Optional arguments must reference unique rule arguments in the body')
     except ValueError as e:raise HTTPException(400,str(e)) from e
 @app.get('/api/actions')
 async def list_actions():
     async with state.connection() as conn:
         rows=await (await conn.execute('SELECT * FROM http_actions ORDER BY name')).fetchall()
-    return [{**dict(r),'body':json.loads(r['body_json'])} for r in rows]
+    return [{**dict(r),'body':json.loads(r['body_json']),'optional_arguments':json.loads(r['optional_arguments_json'])} for r in rows]
 @app.post('/api/actions')
 async def create_action(payload:ActionIn):
     validate_action(payload)
     async with state.connection() as conn:
         try:
-            await conn.execute('INSERT INTO http_actions(name,url,body_json,enabled,auth_env,auth_header,auth_prefix,timeout_seconds) VALUES(?,?,?,?,?,?,?,?)',(payload.name,payload.url,json.dumps(payload.body),int(payload.enabled),'','X-API-Key','',payload.timeout_seconds))
+            await conn.execute('INSERT INTO http_actions(name,url,body_json,enabled,auth_env,auth_header,auth_prefix,timeout_seconds,optional_arguments_json) VALUES(?,?,?,?,?,?,?,?,?)',(payload.name,payload.url,json.dumps(payload.body),int(payload.enabled),'','X-API-Key','',payload.timeout_seconds,json.dumps(payload.optional_arguments)))
             await conn.commit()
         except Exception as e:
             await conn.rollback()
@@ -286,7 +291,7 @@ async def update_action(name:str,payload:ActionIn):
     if name!=payload.name:raise HTTPException(400,'Cannot rename action')
     validate_action(payload)
     async with state.connection() as conn:
-        cur=await conn.execute('UPDATE http_actions SET url=?,body_json=?,enabled=?,auth_env=?,auth_header=?,auth_prefix=?,timeout_seconds=? WHERE name=?',(payload.url,json.dumps(payload.body),int(payload.enabled),'','X-API-Key','',payload.timeout_seconds,name))
+        cur=await conn.execute('UPDATE http_actions SET url=?,body_json=?,enabled=?,auth_env=?,auth_header=?,auth_prefix=?,timeout_seconds=?,optional_arguments_json=? WHERE name=?',(payload.url,json.dumps(payload.body),int(payload.enabled),'','X-API-Key','',payload.timeout_seconds,json.dumps(payload.optional_arguments),name))
         if cur.rowcount==0:raise HTTPException(404,'Unknown action')
         await conn.commit()
     return {'ok':True}

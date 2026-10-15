@@ -624,7 +624,9 @@ function renderConditionBuilder(condition){
 }
 function actionArgumentNames(method){
   const args=actionCatalog[method]?.arguments;
-  return Array.isArray(args)?args:Object.keys(args||{});
+  const all=Array.isArray(args)?args:Object.keys(args||{});
+  const optional=actionCatalog[method]?.optional_arguments||[];
+  return all.filter(name=>!optional.includes(name));
 }
 function actionArgumentMode(raw){
   if(raw&&typeof raw==='object'&&raw.kind==='parameter'&&raw.expression)return 'parameter';
@@ -662,7 +664,8 @@ function renderActionArguments(row,item={}){
   const holder=row.querySelector('.action-arguments');holder.replaceChildren();
   const method=row.querySelector('.action-method').value;
   const existing=item.method===method?(item.arguments||{}):{};
-  for(const name of actionArgumentNames(method)){
+  const optionalNames=actionCatalog[method]?.optional_arguments||[];
+  function renderOne(name){
     const box=el('div',null,'action-arg');box.dataset.name=name;
     const label=el('label',name);
     const mode=document.createElement('select');mode.className='arg-mode';
@@ -710,10 +713,29 @@ function renderActionArguments(row,item={}){
     mode.dataset.previous=initialMode;
     draw(actionArgumentValue(raw,initialMode));
     label.append(mode,valueHolder);box.append(label);holder.append(box);
+    if(optionalNames.includes(name)){
+      const remove=el('button','Remove '+name);remove.type='button';remove.className='danger';
+      remove.onclick=()=>{box.remove();refreshOptionalPicker();updateActionPreview();};box.append(remove);
+    }
     box.addEventListener('input',updateActionPreview);
     box.addEventListener('change',updateActionPreview);
   }
-  if(!holder.children.length)holder.append(el('span','No arguments required','muted'));
+  }
+  for(const name of actionArgumentNames(method))renderOne(name);
+  for(const name of optionalNames){if(Object.prototype.hasOwnProperty.call(existing,name))renderOne(name);}
+  const picker=el('div',null,'action-optional-picker');
+  function refreshOptionalPicker(){
+    picker.replaceChildren();
+    const available=optionalNames.filter(name=>![...holder.querySelectorAll('.action-arg')].some(box=>box.dataset.name===name));
+    if(!available.length)return;
+    const select=document.createElement('select');
+    for(const name of available){const opt=document.createElement('option');opt.value=name;opt.textContent=name;select.append(opt);}
+    const add=el('button','Add optional argument');add.type='button';
+    add.onclick=()=>{renderOne(select.value);refreshOptionalPicker();updateActionPreview();};
+    picker.append(select,add);
+  }
+  holder.append(picker);refreshOptionalPicker();
+  if(!actionArgumentNames(method).length&&!optionalNames.length)holder.prepend(el('span','No arguments required','muted'));
 }
 function addRuleAction(item={}){
   const row=el('div',null,'action-row');

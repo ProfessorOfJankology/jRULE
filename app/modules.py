@@ -14,8 +14,8 @@ def _action_arguments(body_json):
 
 async def catalog():
     async with state.connection() as conn:
-        rows=await (await conn.execute('SELECT name,url,enabled,body_json FROM http_actions ORDER BY name')).fetchall()
-    result={r['name']:{'enabled':bool(r['enabled']),'kind':'japi.post','url':r['url'],'body_json':r['body_json'],'arguments':_action_arguments(r['body_json'])} for r in rows}
+        rows=await (await conn.execute('SELECT name,url,enabled,body_json,optional_arguments_json FROM http_actions ORDER BY name')).fetchall()
+    result={r['name']:{'enabled':bool(r['enabled']),'kind':'japi.post','url':r['url'],'body_json':r['body_json'],'arguments':_action_arguments(r['body_json']),'optional_arguments':json.loads(r['optional_arguments_json'])} for r in rows}
     result['variables.set']={
         'enabled':True,
         'kind':'builtin',

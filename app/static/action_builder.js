@@ -51,6 +51,7 @@ function actionBodyDrawValue(row,value){
 
   if(source==='argument'){
     type.parentElement.hidden=true;
+    row.querySelector('.body-optional').disabled=false;
     const input=document.createElement('input');
     input.className='body-argument-name';
     input.placeholder='argument_name';
@@ -66,6 +67,8 @@ function actionBodyDrawValue(row,value){
   }
 
   type.parentElement.hidden=false;
+  row.querySelector('.body-optional').disabled=true;
+  row.querySelector('.body-optional').checked=false;
   if(type.value==='null'){
     holder.append(el('span','null','muted'));
   }else if(type.value==='boolean'){
@@ -90,7 +93,7 @@ function actionBodyDrawValue(row,value){
   });
 }
 
-function addActionBodyRow(name='',value=''){
+function addActionBodyRow(name='',value='',optional=false){
   const row=el('div',null,'action-body-param');
 
   const nameLabel=el('label','POST parameter');
@@ -131,7 +134,10 @@ function addActionBodyRow(name='',value=''){
   remove.type='button';
   remove.onclick=()=>{row.remove();actionBodySyncBestEffort();actionBodyRenderEmptyState();};
 
-  row.append(nameLabel,sourceLabel,typeLabel,valueLabel,remove);
+  const optionalLabel=el('label','Optional');
+  const optionalBox=document.createElement('input');optionalBox.type='checkbox';optionalBox.className='body-optional';optionalBox.checked=optional;
+  optionalLabel.append(optionalBox);
+  row.append(nameLabel,sourceLabel,typeLabel,valueLabel,optionalLabel,remove);
   $('#action-body-builder').append(row);
 
   source.onchange=()=>{
@@ -151,6 +157,7 @@ function addActionBodyRow(name='',value=''){
     actionBodySyncBestEffort();
   };
   nameInput.addEventListener('input',actionBodySyncBestEffort);
+  optionalBox.addEventListener('change',actionBodySyncBestEffort);
 
   actionBodyDrawValue(row,argumentMatch?argumentMatch[1]:value);
   actionBodyRenderEmptyState();
@@ -195,6 +202,12 @@ function actionBodyFromBuilder(){
 function actionBodySync(){
   const body=actionBodyFromBuilder();
   $('#action-form').elements.body.value=JSON.stringify(body);
+  const optional=[];
+  for(const row of $('#action-body-builder').querySelectorAll('.action-body-param')){
+    if(row.querySelector('.body-source').value==='argument'&&row.querySelector('.body-optional').checked)
+      optional.push(row.querySelector('.body-argument-name').value.trim());
+  }
+  $('#action-form').elements.optional_arguments.value=JSON.stringify([...new Set(optional)]);
   return body;
 }
 
@@ -202,11 +215,14 @@ function actionBodySyncBestEffort(){
   try{actionBodySync()}catch{}
 }
 
-function renderActionBodyBuilder(body){
+function renderActionBodyBuilder(body,optional=[]){
   const root=$('#action-body-builder');
   root.replaceChildren();
   if(body&&typeof body==='object'&&!Array.isArray(body)){
-    for(const entry of Object.entries(body))addActionBodyRow(entry[0],entry[1]);
+    for(const entry of Object.entries(body)){
+      const match=typeof entry[1]==='string'?entry[1].match(actionBodyArgumentPattern):null;
+      addActionBodyRow(entry[0],entry[1],!!match&&optional.includes(match[1]));
+    }
   }
   actionBodyRenderEmptyState();
   actionBodySyncBestEffort();
@@ -215,7 +231,7 @@ function renderActionBodyBuilder(body){
 const actionBuilderPreviousOpenForm=openForm;
 openForm=function(type,obj){
   actionBuilderPreviousOpenForm(type,obj);
-  if(type==='action')renderActionBodyBuilder(obj?.body||{});
+  if(type==='action')renderActionBodyBuilder(obj?.body||{},obj?.optional_arguments||[]);
 };
 
 const actionBuilderPreviousSaveForm=saveForm;

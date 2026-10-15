@@ -27,6 +27,9 @@ async def init_db():
         CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value_json TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS event_log(id INTEGER PRIMARY KEY AUTOINCREMENT,created_at TEXT NOT NULL,level TEXT NOT NULL,event_type TEXT NOT NULL,message TEXT NOT NULL,details_json TEXT);
         """)
+        action_cols={r[1] for r in await (await conn.execute('PRAGMA table_info(http_actions)')).fetchall()}
+        if 'optional_arguments_json' not in action_cols:
+            await conn.execute("ALTER TABLE http_actions ADD COLUMN optional_arguments_json TEXT NOT NULL DEFAULT '[]'")
         # Lightweight schema migration for source-field discovery.
         cols={row[1] for row in await (await conn.execute("PRAGMA table_info(http_sources)")).fetchall()}
         if 'discovered_json' not in cols:
