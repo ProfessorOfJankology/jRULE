@@ -50,7 +50,7 @@ function actionBodyDrawValue(row,value){
   holder.replaceChildren();
 
   if(source==='argument'){
-    type.hidden=true;
+    type.parentElement.hidden=true;
     const input=document.createElement('input');
     input.className='body-argument-name';
     input.placeholder='argument_name';
@@ -65,7 +65,7 @@ function actionBodyDrawValue(row,value){
     return;
   }
 
-  type.hidden=false;
+  type.parentElement.hidden=false;
   if(type.value==='null'){
     holder.append(el('span','null','muted'));
   }else if(type.value==='boolean'){
