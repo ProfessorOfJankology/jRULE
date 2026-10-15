@@ -257,6 +257,111 @@ async def invoke_action(name,arguments,context):
     optional=set(json.loads(row['optional_arguments_json']))
     if optional and isinstance(body,dict):
         matcher=re.compile(r'^\{\{\s*args\.([A-Za-z][A-Za-z0-9_-]*)\s*\}\}
+    payload=unwrap_literal(payload)
+    async with httpx.AsyncClient(timeout=row['timeout_seconds'],follow_redirects=False,trust_env=False) as client:
+        resp=await client.post(japi_url(row['url']),headers=headers_for(),json=payload)
+        if resp.is_error:
+            try:
+                response_detail=resp.json()
+            except Exception:
+                response_detail=resp.text[:2000]
+            raise RuntimeError(
+                f"Action {name} failed: HTTP {resp.status_code}; response={json.dumps(response_detail,default=str)}; "
+                f"payload={json.dumps(payload,default=str)}"
+            )
+    await db.log_event(
+        level='info',
+        event_type='http_action_sent',
+        message=f'Action {name} completed: HTTP {resp.status_code}',
+        details={
+            'action':name,
+            'endpoint':row['url'],
+            'status_code':resp.status_code,
+            'payload':payload,
+        },
+    )
+
+async def poll_all_sources() -> list[dict]:
+    """Fetch all enabled sources concurrently, stage values, then publish together."""
+    async with state.connection() as conn:
+        rows=await (await conn.execute("""
+            SELECT s.name FROM http_sources s JOIN objects o ON o.name=s.name
+            WHERE s.enabled=1 AND o.enabled=1 ORDER BY s.name
+        """)).fetchall()
+    results=await asyncio.gather(
+        *(poll_source(row["name"],stage=True) for row in rows),
+        return_exceptions=True,
+    )
+    ready=[]
+    for row,result in zip(rows,results):
+        if isinstance(result,BaseException):
+            # poll_source has already logged the error and preserved source values.
+            continue
+        ready.append(result)
+    await state.apply_source_batch(ready)
+    for result in ready:
+        await db.log_event(level="info",event_type="source_poll",
+            message=f"{result['name']}: published in unified cycle",
+            details={"source":result["name"],"polled_at":result["polled_at"]})
+    return ready
+)
+        body={key:template for key,template in body.items()
+              if not (isinstance(template,str) and (m:=matcher.fullmatch(template))
+                      and m.group(1) in optional and m.group(1) not in rendered_arguments)}
+    payload=render_body(body,values)
+    from .modules import unwrap_literal
+    payload=unwrap_literal(payload)
+    async with httpx.AsyncClient(timeout=row['timeout_seconds'],follow_redirects=False,trust_env=False) as client:
+        resp=await client.post(japi_url(row['url']),headers=headers_for(),json=payload)
+        if resp.is_error:
+            try:
+                response_detail=resp.json()
+            except Exception:
+                response_detail=resp.text[:2000]
+            raise RuntimeError(
+                f"Action {name} failed: HTTP {resp.status_code}; response={json.dumps(response_detail,default=str)}; "
+                f"payload={json.dumps(payload,default=str)}"
+            )
+    await db.log_event(
+        level='info',
+        event_type='http_action_sent',
+        message=f'Action {name} completed: HTTP {resp.status_code}',
+        details={
+            'action':name,
+            'endpoint':row['url'],
+            'status_code':resp.status_code,
+            'payload':payload,
+        },
+    )
+
+async def poll_all_sources() -> list[dict]:
+    """Fetch all enabled sources concurrently, stage values, then publish together."""
+    async with state.connection() as conn:
+        rows=await (await conn.execute("""
+            SELECT s.name FROM http_sources s JOIN objects o ON o.name=s.name
+            WHERE s.enabled=1 AND o.enabled=1 ORDER BY s.name
+        """)).fetchall()
+    results=await asyncio.gather(
+        *(poll_source(row["name"],stage=True) for row in rows),
+        return_exceptions=True,
+    )
+    ready=[]
+    for row,result in zip(rows,results):
+        if isinstance(result,BaseException):
+            # poll_source has already logged the error and preserved source values.
+            continue
+        ready.append(result)
+    await state.apply_source_batch(ready)
+    for result in ready:
+        await db.log_event(level="info",event_type="source_poll",
+            message=f"{result['name']}: published in unified cycle",
+            details={"source":result["name"],"polled_at":result["polled_at"]})
+    return ready
+)
+        body={key:template for key,template in body.items()
+              if not (isinstance(template,str) and (match:=matcher.fullmatch(template))
+                      and match.group(1) in optional and match.group(1) not in rendered_arguments)}
+    payload=render_body(body,values)
     from .modules import unwrap_literal
     payload=unwrap_literal(payload)
     async with httpx.AsyncClient(timeout=row['timeout_seconds'],follow_redirects=False,trust_env=False) as client:
