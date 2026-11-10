@@ -31,7 +31,14 @@ fi
 chmod 0600 /etc/jrule/jrule.env
 if [[ ! -x /opt/jrule/venv/bin/python ]];then python3 -m venv /opt/jrule/venv;fi
 /opt/jrule/venv/bin/python -m pip install -r /opt/jrule/requirements.txt
-chown -R root:root /opt/jrule/app /opt/jrule/scripts /opt/jrule/requirements.txt
+# Keep the checkout writable by its deploying user (e.g. grayjo on ESC-JAPPS).
+# Application code is read-only to the jrule service through systemd; runtime
+# data and credentials retain their separate protected ownership/permissions.
+DEPLOY_USER="${JRULE_DEPLOY_USER:-${SUDO_USER:-}}"
+if [[ -n "$DEPLOY_USER" && "$DEPLOY_USER" != root ]]; then
+  id "$DEPLOY_USER" >/dev/null
+  chown -R "$DEPLOY_USER:$(id -gn "$DEPLOY_USER")" /opt/jrule
+fi
 install -m 0644 "$HERE/systemd/jrule.service" /etc/systemd/system/jrule.service
 install -m 0644 "$HERE/systemd/jrule-watchdog.service" /etc/systemd/system/jrule-watchdog.service
 install -m 0644 "$HERE/systemd/jrule-watchdog.timer" /etc/systemd/system/jrule-watchdog.timer
