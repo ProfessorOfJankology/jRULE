@@ -20,6 +20,8 @@ sudo systemctl status jrule --no-pager
 
 The installer preserves `/etc/jrule/jrule.env`, the database and existing jRULE rules. Back up your database before upgrading. Existing v0.2 entries using full HTTP URLs are **not valid jAPI endpoints**; update their endpoint paths in the UI before enabling their polls/actions. Old v0.2 sources stored as `http.get` objects are not scheduled by v0.3; delete/recreate them or use a fresh database if desired.
 
+When invoked with `sudo`, the installer keeps `/opt/jrule` owned by the invoking deployment user (`SUDO_USER`) so that Git operations continue working. Set `JRULE_DEPLOY_USER` explicitly for another deployment account. Run-time SQLite data stays owned by `jrule` in `/var/lib/jrule`; the private jAPI key remains under `/run/jrule`.
+
 ### Automatic jAPI authentication
 
 The systemd service runs `/opt/jrule/scripts/load-japi-key.sh` as a privileged **pre-start hook**. It extracts only `API_KEY` from `/etc/japi/api.env` into `/run/jrule/japi-api-key`, owner `jrule`, mode `0600`. No SQL credentials enter the jRULE environment. The runtime file is recreated whenever jRULE restarts, so a rotated key requires `sudo systemctl restart jrule`. The jAPI base address defaults to `http://127.0.0.1:8088`; override `JRULE_JAPI_BASE_URL` in `/etc/jrule/jrule.env` if needed. Keep `JRULE_ENABLE_ACTIONS=0` while validating sources and actions.
