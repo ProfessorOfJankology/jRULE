@@ -12,8 +12,10 @@ install -d -o jrule -g jrule -m 0750 /var/lib/jrule
 if [[ "$HERE" != "/opt/jrule" ]]; then
   cp -a "$HERE/app/." /opt/jrule/app/
   install -m 0755 "$HERE/scripts/load-japi-key.sh" /opt/jrule/scripts/load-japi-key.sh
+  install -m 0755 "$HERE/scripts/jrule-watchdog.py" /opt/jrule/scripts/jrule-watchdog.py
   install -m 0644 "$HERE/requirements.txt" /opt/jrule/requirements.txt
 fi
+chmod 0755 /opt/jrule/scripts/jrule-watchdog.py
 if [[ ! -f /etc/jrule/jrule.env ]];then
   install -m 0600 /dev/null /etc/jrule/jrule.env
   cat >/etc/jrule/jrule.env <<'EOF'
@@ -31,7 +33,10 @@ if [[ ! -x /opt/jrule/venv/bin/python ]];then python3 -m venv /opt/jrule/venv;fi
 /opt/jrule/venv/bin/python -m pip install -r /opt/jrule/requirements.txt
 chown -R root:root /opt/jrule/app /opt/jrule/scripts /opt/jrule/requirements.txt
 install -m 0644 "$HERE/systemd/jrule.service" /etc/systemd/system/jrule.service
+install -m 0644 "$HERE/systemd/jrule-watchdog.service" /etc/systemd/system/jrule-watchdog.service
+install -m 0644 "$HERE/systemd/jrule-watchdog.timer" /etc/systemd/system/jrule-watchdog.timer
 systemctl daemon-reload
 systemctl enable jrule.service
 systemctl restart jrule.service
+systemctl enable --now jrule-watchdog.timer
 echo 'jRULE installed. Test: curl http://127.0.0.1:8096/api/version (or configured bind address)'

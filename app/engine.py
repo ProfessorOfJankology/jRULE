@@ -3,11 +3,13 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import logging
 from datetime import datetime,timezone
 from . import db, state, modules, http_services, datetime_source
 from .rules import evaluate_condition
 
 evaluation_lock = asyncio.Lock()
+logger = logging.getLogger(__name__)
 
 
 async def evaluate_once() -> list[dict]:
@@ -89,10 +91,20 @@ async def loop(stop:asyncio.Event)->None:
         started=asyncio.get_running_loop().time()
         try:
             await evaluate_once()
-        except Exception as exc:
-            await db.log_event(level="error",event_type="engine_error",message=str(exc))
-        settings=await db.get_settings()
-        interval=max(1,int(settings.get("rule_interval_seconds",10)))
+            await db.log_event(level="info",event_type="cycle_poll",message="Evaluation cycle completed",
+                               details={"duration_ms":round((asyncio.get_running_loop().time()-started)*1000)})
+        except Exception:
+            logger.exception("jRULE evaluation cycle failed")
+            try:
+                await db.log_event(level="error",event_type="engine_error",message="Evaluation cycle failed; see system journal")
+            except Exception:
+                logger.exception("Could not persist engine_error event")
+        try:
+            settings=await db.get_settings()
+            interval=max(1,int(settings.get("rule_interval_seconds",10)))
+        except Exception:
+            logger.exception("Could not read cycle interval; retrying in 10 seconds")
+            interval=10
         elapsed=asyncio.get_running_loop().time()-started
         remaining=max(0,interval-elapsed)
         if not remaining:

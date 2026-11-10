@@ -1,0 +1,11 @@
+[Unit]
+Description=Check jRULE polling freshness every minute
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=60s
+AccuracySec=10s
+Unit=jrule-watchdog.service
+
+[Install]
+WantedBy=timers.target

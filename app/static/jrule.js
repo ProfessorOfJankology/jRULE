@@ -811,8 +811,9 @@ async function saveRule(e){
 
 function logCategory(event){
   const type=String(event.event_type||'');
-  if(type.startsWith('source_'))return 'sources';
+  if(type==='cycle_poll'||type==='source_poll')return 'polls';
   if(String(event.level||'').toLowerCase()==='error')return 'errors';
+  if(type.startsWith('source_'))return 'sources';
   if(type.includes('rule')||type.includes('engine'))return 'rules';
   if(type.includes('action')||type.includes('http_action'))return 'actions';
   if(type.includes('source')||type.includes('poll'))return 'sources';
@@ -825,13 +826,11 @@ function formatLogTime(value){
 }
 async function refreshLogs(){
   const limit=Number($('#log-limit')?.value||100);
-  const filter=$('#log-filter')?.value||'all';
+  const filter=$('#log-filter')?.value||'activity';
   const events=await api('/api/events?limit='+encodeURIComponent(limit)+'&category='+encodeURIComponent(filter));
   const body=$('#log-body');body.replaceChildren();
   let shown=0;
   for(const event of events){
-    const category=logCategory(event);
-    if(filter!=='all' && filter!==category)continue;
     const tr=el('tr',null,'log-'+String(event.level||'info').toLowerCase());
     const messageTd=el('td');
     messageTd.append(document.createTextNode(event.message||''));

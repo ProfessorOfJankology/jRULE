@@ -32,6 +32,22 @@ Set `JRULE_ADMIN_TOKEN` to a long random secret in `/etc/jrule/jrule.env` and re
 
 ## Unified evaluation cycle
 
+### Failure recovery and polling logs
+
+The engine logs each completed evaluation cycle as `cycle_poll`, and every successfully published jAPI source as `source_poll`. The Logs page defaults to **Activity (hide successful polls)**; select **Polls** or **All events** to inspect polling. Source errors remain visible in the default activity view. Log retention continues to follow the configured number of days (default one).
+
+The engine logs full cycle failures to the systemd journal even if SQLite event logging fails. An unexpectedly terminated engine task exits the worker process unsuccessfully so `Restart=on-failure` can recover it.
+
+An independent `jrule-watchdog.timer` checks the built-in DateTime `datetime` property's `last_polled` value every minute. If the heartbeat is older than `max(180 seconds, 3 × rule_interval_seconds)`, it records the process PID and stale age in the journal, then restarts `jrule.service`. It allows three restart attempts per 15 minutes, recorded in `/var/lib/jrule/.watchdog-restarts.json`, and never restarts on a database read failure. It also observes a startup grace period. For diagnosis:
+
+```bash
+systemctl status jrule-watchdog.timer --no-pager
+journalctl -u jrule-watchdog.service -n 100 --no-pager
+journalctl -u jrule.service -n 100 --no-pager
+```
+
+Do not manually delete the watchdog's restart history during an active recovery incident. A restart of jRULE cannot reconstruct missed presence transitions.
+
 One scheduler runs at the configured **Rule evaluation interval** (default 10 seconds). Each cycle fetches all enabled jAPI GET sources concurrently (10-second request timeout), stages successful results, publishes them in one SQLite transaction, evaluates enabled rules against that snapshot, then invokes matching actions in priority order. Cycles cannot overlap. The interval is measured from cycle start; if one cycle exceeds the interval, the next starts when it completes.
 
 `previous` is the immediately preceding successful poll value, even when unchanged. Failed source requests retain their stored values and expose an error in source metadata rather than impersonating an offline event. `checks_since_poll` is removed, and per-source interval settings no longer schedule separate polls. Existing rules are **not modified**; remove any references to `checks_since_poll` manually before deploying.

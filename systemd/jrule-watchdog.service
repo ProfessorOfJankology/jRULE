@@ -1,0 +1,12 @@
+[Unit]
+Description=jRULE stale polling watchdog
+After=jrule.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/jrule/scripts/jrule-watchdog.py
+TimeoutStartSec=60
+NoNewPrivileges=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/jrule

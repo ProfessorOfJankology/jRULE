@@ -4,6 +4,7 @@ import asyncio
 import hmac
 import json
 import os
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -17,11 +18,27 @@ from . import APP_NAME, APP_VERSION, APP_BUILD
 DIR=Path(__file__).parent
 stop=asyncio.Event()
 workers=[]
+logger=logging.getLogger(__name__)
+
+async def supervised_engine(stop_event):
+    try:
+        await engine.loop(stop_event)
+        if not stop_event.is_set():
+            raise RuntimeError("Engine exited without a shutdown request")
+    except asyncio.CancelledError:
+        if not stop_event.is_set():
+            logger.critical("Engine task was unexpectedly cancelled; terminating for systemd recovery")
+            os._exit(1)
+        raise
+    except BaseException:
+        logger.exception("Engine task terminated; terminating process for systemd recovery")
+        os._exit(1)
+
 @asynccontextmanager
 async def lifespan(app):
     await db.init_db()
     stop.clear()
-    workers.extend([asyncio.create_task(engine.loop(stop)),asyncio.create_task(log_cleanup_loop(stop))])
+    workers.extend([asyncio.create_task(supervised_engine(stop)),asyncio.create_task(log_cleanup_loop(stop))])
     yield
     stop.set()
     await asyncio.gather(*workers,return_exceptions=True)
@@ -353,10 +370,12 @@ async def run_rule_now(id:int):
 @app.post('/api/global-rules/evaluate')
 async def evaluate_now():return await engine.evaluate_once()
 @app.get('/api/events')
-async def events(limit:int=100,category:str='all'):
-    if category not in {'all','sources','errors','rules','actions'}:
+async def events(limit:int=100,category:str='activity'):
+    if category not in {'activity','all','polls','sources','errors','rules','actions'}:
         raise HTTPException(400,'Invalid event category')
     filters={
+        'activity':"event_type NOT IN ('source_poll','cycle_poll')",
+        'polls':"event_type IN ('source_poll','cycle_poll')",
         'sources':"event_type LIKE 'source_%'",
         'errors':"level='error'",
         'rules':"(event_type LIKE '%rule%' OR event_type LIKE '%engine%')",
